@@ -10,6 +10,9 @@ roi:
   width: 880
   height: 520
 
+api:
+  max_retries: 3          # reintentos del SDK ante 429/5xx (backoff exponencial)
+
 preprocessing:
   target_width: 1024     # resize antes de enviar a Claude
   jpeg_quality: 85       # calidad de compresión para reducir tokens

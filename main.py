@@ -64,7 +64,11 @@ def list_profiles() -> list[str]:
 def build_components(settings: dict, profile: dict, api_key: str):
     preprocessor = Preprocessor(**settings["preprocessing"])
     frame_selector = FrameSelector(**settings["frame_selector"])
-    analyzer = VisionAnalyzer(api_key=api_key, profile=profile)
+    analyzer = VisionAnalyzer(
+        api_key=api_key,
+        profile=profile,
+        max_retries=settings.get("api", {}).get("max_retries", 3),
+    )
     decision = DecisionEngine(**settings["decision"])
     storage = Storage(str(DB_PATH), str(SESSIONS_DIR), settings.get("storage", {}))
     alerter = Alerter(settings, webhook_url=os.environ.get("WEBHOOK_URL", ""))

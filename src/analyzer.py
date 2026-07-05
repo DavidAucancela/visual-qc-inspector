@@ -75,8 +75,11 @@ class InspectionResult:
 
 
 class VisionAnalyzer:
-    def __init__(self, api_key: str, profile: dict):
-        self._client = anthropic.Anthropic(api_key=api_key)
+    def __init__(self, api_key: str, profile: dict, max_retries: int = 3):
+        # El SDK reintenta 429/408/409/5xx con backoff exponencial y respeta
+        # `retry-after`. Subimos el default (2) para más resiliencia en sesiones
+        # largas; el worker captura lo que quede sin tumbar el loop.
+        self._client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries)
         self.profile = profile
         # Acumuladores de sesión para el contador de costo del dashboard
         self.total_analyses = 0

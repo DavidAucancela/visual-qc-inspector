@@ -90,6 +90,43 @@ def test_get_inspections_parses_defects(storage):
     assert parsed[0]["description"] == "Grieta"
 
 
+def test_save_inspection_persists_raw_response(storage):
+    """La respuesta cruda de Claude se guarda para auditoría (columna raw_response)."""
+    sid = storage.start_session("generic")
+    raw = '{"verdict": "FAIL", "summary": "Grieta"}'
+    result = _result("FAIL")
+    result.raw_response = raw
+    storage.save_inspection(sid, _verdict("FAIL"), result)
+
+    assert storage.get_inspections(sid)[0]["raw_response"] == raw
+
+
+def test_migrate_adds_raw_response_to_legacy_db(tmp_path):
+    """Una DB creada sin raw_response (versión previa) se migra sin perder datos."""
+    import sqlite3
+
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        "CREATE TABLE inspections (id INTEGER PRIMARY KEY, session_id INTEGER,"
+        " timestamp DATETIME, verdict TEXT, overall_confidence REAL, summary TEXT,"
+        " defects_json TEXT, latency_ms INTEGER, frame_path TEXT);"
+        "CREATE TABLE sessions (id INTEGER PRIMARY KEY, started_at DATETIME,"
+        " ended_at DATETIME, profile_name TEXT, total_inspections INTEGER,"
+        " pass_count INTEGER, fail_count INTEGER, warn_count INTEGER);"
+    )
+    conn.commit()
+    conn.close()
+
+    st = Storage(db_path=str(db), sessions_dir=str(tmp_path / "s"))
+    try:
+        sid = st.start_session("generic")
+        st.save_inspection(sid, _verdict("PASS"), _result("PASS"))
+        assert "raw_response" in st.get_inspections(sid)[0]
+    finally:
+        st.close()
+
+
 def test_get_session_stats_missing_session_raises(storage):
     with pytest.raises(ValueError):
         storage.get_session_stats(999)

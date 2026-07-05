@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS inspections (
     summary TEXT,
     defects_json TEXT,
     latency_ms INTEGER,
-    frame_path TEXT
+    frame_path TEXT,
+    raw_response TEXT
 );
 """
 
@@ -60,7 +61,14 @@ class Storage:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Agrega columnas nuevas a DBs creadas por versiones anteriores."""
+        cols = {row["name"] for row in self._conn.execute("PRAGMA table_info(inspections)")}
+        if "raw_response" not in cols:
+            self._conn.execute("ALTER TABLE inspections ADD COLUMN raw_response TEXT")
 
     def start_session(self, profile_name: str) -> int:
         with self._lock:
@@ -97,8 +105,9 @@ class Storage:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO inspections (session_id, timestamp, verdict,"
-                " overall_confidence, summary, defects_json, latency_ms, frame_path)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " overall_confidence, summary, defects_json, latency_ms, frame_path,"
+                " raw_response)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     result.timestamp.isoformat(),
@@ -108,6 +117,7 @@ class Storage:
                     defects_json,
                     result.latency_ms,
                     frame_path,
+                    result.raw_response,
                 ),
             )
             col = {"PASS": "pass_count", "WARN": "warn_count", "FAIL": "fail_count"}[
