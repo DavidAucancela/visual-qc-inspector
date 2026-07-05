@@ -1,0 +1,27 @@
+name: Inspección genérica
+version: "1.0"
+description: Perfil base para cualquier producto
+
+# Esto es lo que se inyecta en el prompt de Claude
+inspection_criteria: |
+  Analiza esta imagen como inspector de calidad experto.
+  Busca cualquier defecto visual evidente:
+  - Daño físico (grietas, golpes, deformaciones)
+  - Suciedad o contaminación visible
+  - Piezas faltantes o desalineadas
+  - Anomalías de color o textura inusual
+
+# Severidades que Claude puede reportar
+defect_severities:
+  - critical    # FAIL inmediato
+  - major       # FAIL tras debounce
+  - minor       # WARN
+  - cosmetic    # WARN o ignorar
+
+# Umbral mínimo de severidad para FAIL
+fail_on_severity: major
+
+# Contexto adicional que se agrega al prompt
+context: |
+  El producto inspeccionado es un artículo genérico de manufactura.
+  Evalúa con criterios estándar de control de calidad industrial.

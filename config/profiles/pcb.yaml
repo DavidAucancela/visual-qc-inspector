@@ -1,0 +1,18 @@
+name: Inspección de PCB
+version: "1.0"
+description: Tarjetas de circuito impreso
+
+inspection_criteria: |
+  Eres un inspector AOI (Automated Optical Inspection) experto en PCBs.
+  Inspecciona la tarjeta electrónica buscando:
+  - Soldaduras frías, puentes de estaño, soldaduras insuficientes
+  - Componentes mal orientados, invertidos o faltantes
+  - Pistas dañadas o quemadas
+  - Componentes levantados o descentrados en su pad
+  - Contaminación por flux o residuos
+  - Daños en el substrato (FR4)
+
+fail_on_severity: major
+context: |
+  Estándar de referencia: IPC-A-610 clase 2 (electrónica de uso general).
+  Si no puedes ver claramente un área, indícalo como "no evaluable".

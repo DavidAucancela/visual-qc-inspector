@@ -1,0 +1,39 @@
+camera:
+  device_id: 0
+  width: 1280
+  height: 720
+
+roi:
+  enabled: false         # true = seleccionar región de interés al inicio
+  x: 200
+  y: 100
+  width: 880
+  height: 520
+
+preprocessing:
+  target_width: 1024     # resize antes de enviar a Claude
+  jpeg_quality: 85       # calidad de compresión para reducir tokens
+  enhance_contrast: false
+
+frame_selector:
+  mode: timer            # "timer" | "diff" | "manual"
+  timer_interval_sec: 3  # analizar cada N segundos
+  diff_threshold: 0.15   # cambio mínimo de frame para disparar (modo diff)
+
+decision:
+  debounce_frames: 2     # confirmar FAIL en N análisis consecutivos
+  fail_threshold: 0.7    # confianza mínima para emitir FAIL
+  warn_threshold: 0.4    # confianza mínima para emitir WARN
+
+alerts:
+  sound_on_fail: true
+  sound_on_pass: false
+  webhook_on_fail: true
+  os_notification: true
+
+storage:
+  save_pass_frames: false  # guardar frames OK (puede llenar disco)
+  save_fail_frames: true
+  save_warn_frames: true
+
+active_profile: generic    # nombre del archivo en config/profiles/

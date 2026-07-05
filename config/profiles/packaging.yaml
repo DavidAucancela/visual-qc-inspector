@@ -1,0 +1,17 @@
+name: Inspección de packaging
+version: "1.0"
+description: Etiquetas, empaques y presentación
+
+inspection_criteria: |
+  Inspecciona el empaque o etiqueta buscando:
+  - Texto ilegible, borroso o mal impreso
+  - Etiqueta mal colocada, arrugada o despegada
+  - Daños en la caja: golpes, rasgaduras, humedad
+  - Código de barras dañado o ilegible
+  - Colores fuera de especificación o decoloración
+  - Fecha de vencimiento o lote ausente o ilegible
+
+fail_on_severity: major
+context: |
+  Inspección de presentación comercial. El producto debe llegar al
+  consumidor final en condiciones óptimas de presentación.

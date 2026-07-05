@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Reporte QC — {{ session.profile_name }} — {{ generated_at }}</title>
+<style>
+  :root {
+    --pass: #3fa34d; --warn: #e8930c; --fail: #d63b3b;
+    --bg: #f6f7f9; --card: #ffffff; --text: #24292f; --muted: #6e7781;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--text); margin: 0; padding: 32px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  .subtitle { color: var(--muted); margin-bottom: 28px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+  .card { background: var(--card); border-radius: 10px; padding: 18px 24px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.08); min-width: 140px; }
+  .card .num { font-size: 30px; font-weight: 700; }
+  .card .label { color: var(--muted); font-size: 13px; }
+  .num.pass { color: var(--pass); } .num.warn { color: var(--warn); } .num.fail { color: var(--fail); }
+
+  .pie-wrap { display: flex; align-items: center; gap: 24px; }
+  .pie { width: 130px; height: 130px; border-radius: 50%;
+         background: conic-gradient(
+           var(--pass) 0% {{ stats.pass_pct }}%,
+           var(--warn) {{ stats.pass_pct }}% {{ stats.pass_pct + stats.warn_pct }}%,
+           var(--fail) {{ stats.pass_pct + stats.warn_pct }}% 100%); }
+  .legend div { margin: 4px 0; font-size: 14px; }
+  .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--card);
+          border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  th { background: #eef0f3; text-align: left; padding: 10px 14px; font-size: 13px;
+       cursor: pointer; user-select: none; }
+  th:hover { background: #e2e5e9; }
+  td { padding: 10px 14px; border-top: 1px solid #eef0f3; font-size: 14px; vertical-align: top; }
+  .badge { padding: 3px 10px; border-radius: 20px; color: #fff; font-size: 12px; font-weight: 600; }
+  .badge.PASS { background: var(--pass); } .badge.WARN { background: var(--warn); } .badge.FAIL { background: var(--fail); }
+  .defect { font-size: 12.5px; color: var(--muted); margin: 2px 0; }
+  .thumb { border-radius: 6px; display: block; max-width: 320px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<h1>Reporte de inspección — {{ session.profile_name }}</h1>
+<div class="subtitle">
+  Sesión #{{ session.id }} · iniciada {{ session.started_at }} · duración {{ duration }} · generado {{ generated_at }}
+</div>
+
+<div class="cards">
+  <div class="card"><div class="num">{{ stats.total_inspections }}</div><div class="label">Inspecciones</div></div>
+  <div class="card"><div class="num pass">{{ "%.1f"|format(stats.pass_pct) }}%</div><div class="label">PASS ({{ stats.pass_count }})</div></div>
+  <div class="card"><div class="num warn">{{ "%.1f"|format(stats.warn_pct) }}%</div><div class="label">WARN ({{ stats.warn_count }})</div></div>
+  <div class="card"><div class="num fail">{{ "%.1f"|format(stats.fail_pct) }}%</div><div class="label">FAIL ({{ stats.fail_count }})</div></div>
+  <div class="card"><div class="num">{{ stats.avg_latency_ms }} ms</div><div class="label">Latencia media</div></div>
+  <div class="card">
+    <div class="pie-wrap">
+      <div class="pie"></div>
+      <div class="legend">
+        <div><span class="dot" style="background:var(--pass)"></span>PASS</div>
+        <div><span class="dot" style="background:var(--warn)"></span>WARN</div>
+        <div><span class="dot" style="background:var(--fail)"></span>FAIL</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<table id="inspections">
+  <thead>
+    <tr>
+      <th onclick="sortTable(0)">Timestamp &#x25B4;&#x25BE;</th>
+      <th onclick="sortTable(1)">Veredicto &#x25B4;&#x25BE;</th>
+      <th onclick="sortTable(2)">Confianza &#x25B4;&#x25BE;</th>
+      <th>Resumen</th>
+      <th>Defectos</th>
+      <th>Evidencia</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for i in inspections %}
+    <tr>
+      <td>{{ i.timestamp }}</td>
+      <td><span class="badge {{ i.verdict }}">{{ i.verdict }}</span></td>
+      <td>{{ "%.0f"|format(i.overall_confidence * 100) }}%</td>
+      <td>{{ i.summary }}</td>
+      <td>
+        {% for d in i.defects %}
+          <div class="defect">[{{ d.severity }}] {{ d.description }} — {{ d.location }} ({{ "%.0f"|format(d.confidence * 100) }}%)</div>
+        {% else %}
+          <span class="defect">—</span>
+        {% endfor %}
+      </td>
+      <td>
+        {% if i.thumbnail_b64 %}
+          <img class="thumb" src="data:image/jpeg;base64,{{ i.thumbnail_b64 }}" alt="frame FAIL">
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<footer>Generado por Visual QC Inspector · Claude Vision ({{ stats.total_inspections }} análisis)</footer>
+
+<script>
+/* Orden ascendente/descendente por columna — inline, sin dependencias */
+function sortTable(col) {
+  const table = document.getElementById("inspections");
+  const tbody = table.tBodies[0];
+  const rows = Array.from(tbody.rows);
+  const dir = table.dataset["dir" + col] === "asc" ? -1 : 1;
+  table.dataset["dir" + col] = dir === 1 ? "asc" : "desc";
+  rows.sort((a, b) => {
+    const x = a.cells[col].innerText.trim(), y = b.cells[col].innerText.trim();
+    const nx = parseFloat(x), ny = parseFloat(y);
+    if (!isNaN(nx) && !isNaN(ny)) return (nx - ny) * dir;
+    return x.localeCompare(y) * dir;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+</script>
+</body>
+</html>
