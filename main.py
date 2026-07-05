@@ -68,6 +68,8 @@ def build_components(settings: dict, profile: dict, api_key: str):
         api_key=api_key,
         profile=profile,
         max_retries=settings.get("api", {}).get("max_retries", 3),
+        observatory_url=os.environ.get("OBSERVATORY_URL", ""),
+        observatory_token=os.environ.get("OBSERVATORY_TOKEN", ""),
     )
     decision = DecisionEngine(**settings["decision"])
     storage = Storage(str(DB_PATH), str(SESSIONS_DIR), settings.get("storage", {}))

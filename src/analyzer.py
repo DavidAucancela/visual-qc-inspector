@@ -12,6 +12,17 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel, Field
 
+# Observabilidad opcional (llm-observatory). El SDK solo instrumenta
+# messages.create(); como acá usamos messages.parse() (structured outputs),
+# integramos como side-channel: reportamos la métrica nosotros con el mismo
+# esquema del SDK. Si el paquete no está instalado, la observabilidad es no-op.
+try:
+    from llm_observatory import calculate_cost
+    from llm_observatory._utils import send_metric_background
+except ImportError:  # pragma: no cover - depende de un paquete opcional
+    calculate_cost = None
+    send_metric_background = None
+
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 1024
 
@@ -75,12 +86,22 @@ class InspectionResult:
 
 
 class VisionAnalyzer:
-    def __init__(self, api_key: str, profile: dict, max_retries: int = 3):
+    def __init__(
+        self,
+        api_key: str,
+        profile: dict,
+        max_retries: int = 3,
+        observatory_url: str = "",
+        observatory_token: str = "",
+    ):
         # El SDK reintenta 429/408/409/5xx con backoff exponencial y respeta
         # `retry-after`. Subimos el default (2) para más resiliencia en sesiones
         # largas; el worker captura lo que quede sin tumbar el loop.
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries)
         self.profile = profile
+        # Observabilidad: activa solo si hay URL configurada y el SDK instalado.
+        self._observatory_url = observatory_url
+        self._observatory_token = observatory_token
         # Acumuladores de sesión para el contador de costo del dashboard
         self.total_analyses = 0
         self.total_input_tokens = 0
@@ -161,7 +182,48 @@ Analiza la imagen adjunta y responde con el JSON de inspección.
         self.total_analyses += 1
         self.total_input_tokens += result.input_tokens
         self.total_output_tokens += result.output_tokens
+        self._report_metric(result)
         return result
+
+    def _report_metric(self, result: InspectionResult) -> None:
+        """Reporta la métrica a llm-observatory (fire-and-forget, no bloquea).
+
+        Side-channel: replica el esquema que MonitoredAnthropic postea a
+        /api/metrics. No-op si no hay URL configurada o el SDK no está instalado;
+        cualquier fallo se traga — la observabilidad nunca afecta la inspección.
+        """
+        if not (self._observatory_url and send_metric_background is not None):
+            return
+        try:
+            in_t, out_t = result.input_tokens, result.output_tokens
+            cost = (
+                calculate_cost(MODEL, in_t, out_t)
+                if calculate_cost is not None
+                else in_t * INPUT_TOKEN_PRICE + out_t * OUTPUT_TOKEN_PRICE
+            )
+            metric = {
+                "model": MODEL,
+                "input_tokens": in_t,
+                "output_tokens": out_t,
+                "total_tokens": in_t + out_t,
+                "cost_usd": cost,
+                "latency_ms": result.latency_ms,
+                "status_code": 200,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "tools_used": [],
+                "prompt_preview": f"[QC] {self.profile.get('name', '')}",
+                "tags": {
+                    "app": "visual-qc-inspector",
+                    "profile": self.profile.get("name", ""),
+                    "verdict": result.verdict,
+                },
+            }
+            send_metric_background(
+                self._observatory_url, metric, token=self._observatory_token or None
+            )
+        except Exception:  # noqa: BLE001 - la observabilidad nunca tumba el análisis
+            pass
 
     @staticmethod
     def _result_from_parsed(

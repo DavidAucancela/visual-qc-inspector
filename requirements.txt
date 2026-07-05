@@ -7,3 +7,8 @@ requests>=2.31
 numpy>=1.26
 pytest>=8.0
 python-dotenv>=1.0
+
+# Opcional — observabilidad (métricas a llm-observatory). Sin esto, el reporte
+# de métricas es no-op. Instalar desde el monorepo:
+#   pip install "git+https://github.com/DavidAucancela/llm-observatory.git#subdirectory=packages/sdk-python"
+# llm-observatory

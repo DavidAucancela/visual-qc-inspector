@@ -111,6 +111,60 @@ def test_analyze_with_real_image(monkeypatch):
     assert analyzer.estimated_cost_usd > 0
 
 
+def test_analyze_reports_metric_when_observatory_configured(monkeypatch):
+    """Con observatory_url, analyze() reporta la métrica (side-channel) sin bloquear."""
+    import src.analyzer as analyzer_mod
+
+    captured = {}
+
+    def fake_send(url, data, token=None):
+        captured["url"] = url
+        captured["data"] = data
+        captured["token"] = token
+
+    # Simula el SDK instalado (los tests no dependen del paquete real)
+    monkeypatch.setattr(analyzer_mod, "send_metric_background", fake_send)
+    monkeypatch.setattr(analyzer_mod, "calculate_cost", lambda m, i, o: 0.01)
+
+    analyzer = VisionAnalyzer(
+        api_key="test-key",
+        profile=PROFILE,
+        observatory_url="https://obs.example.app",
+        observatory_token="obs_sk_123",
+    )
+    parsed = VisionVerdict.model_validate_json(VALID_RESPONSE)
+    monkeypatch.setattr(
+        analyzer._client.messages, "parse", lambda **kw: _fake_parsed_response(parsed)
+    )
+
+    analyzer.analyze("abc")
+
+    assert captured["url"] == "https://obs.example.app"
+    assert captured["token"] == "obs_sk_123"
+    assert captured["data"]["model"] == "claude-sonnet-4-6"
+    assert captured["data"]["input_tokens"] == 850
+    assert captured["data"]["cost_usd"] == 0.01
+    assert captured["data"]["tags"]["verdict"] == "FAIL"
+    assert captured["data"]["tags"]["app"] == "visual-qc-inspector"
+
+
+def test_analyze_no_metric_without_observatory_url(monkeypatch):
+    """Sin observatory_url (default), no se reporta nada aunque el SDK esté."""
+    import src.analyzer as analyzer_mod
+
+    calls = []
+    monkeypatch.setattr(analyzer_mod, "send_metric_background", lambda *a, **k: calls.append(a))
+
+    analyzer = VisionAnalyzer(api_key="test-key", profile=PROFILE)  # sin observatory_url
+    parsed = VisionVerdict.model_validate_json(VALID_RESPONSE)
+    monkeypatch.setattr(
+        analyzer._client.messages, "parse", lambda **kw: _fake_parsed_response(parsed)
+    )
+
+    analyzer.analyze("abc")
+    assert calls == []
+
+
 def test_analyze_falls_back_when_unparseable(monkeypatch):
     """Si la API no devuelve salida parseable (refusal/max_tokens), degrada a WARN."""
     analyzer = VisionAnalyzer(api_key="test-key", profile=PROFILE)
