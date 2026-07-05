@@ -19,7 +19,9 @@ from pydantic import BaseModel, Field
 try:
     from llm_observatory import calculate_cost
     from llm_observatory._utils import send_metric_background
-except ImportError:  # pragma: no cover - depende de un paquete opcional
+except Exception:  # noqa: BLE001 - dep opcional: ausente (ImportError) o
+    # incompatible (p. ej. requiere Python 3.10+ y falla con TypeError al
+    # importar). En cualquier caso la observabilidad es no-op; nunca rompe la app.
     calculate_cost = None
     send_metric_background = None
 

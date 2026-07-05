@@ -25,7 +25,7 @@ Separación clave: la lógica de captura/dashboard (OpenCV, loop en tiempo real)
 
 ## Stack
 
-- Python 3.9+ (el venv del repo corre 3.9.6; el código usa `from __future__ import annotations` para sintaxis de tipos moderna en 3.9). El CLAUDE.md previo decía 3.11+ — verificar antes de asumir features de 3.10/3.11.
+- **Python 3.10+** (el venv del repo corre 3.12.13). El código propio usa `from __future__ import annotations`, pero la dep opcional `llm-observatory` usa `X | None` como anotación evaluada en runtime → **requiere 3.10+** (en 3.9 falla al importar con `TypeError`, no `ImportError`). El venv se estandarizó en 3.12; sin el SDK o en 3.9 la observabilidad degrada a no-op sin tumbar la app.
 - OpenCV (`cv2`) — captura y dashboard
 - SDK oficial `anthropic` — Claude Vision (`pydantic` para el esquema de structured outputs)
 - PyYAML — perfiles de inspección; `python-dotenv` carga `.env`
