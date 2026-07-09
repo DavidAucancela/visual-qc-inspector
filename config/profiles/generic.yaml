@@ -19,9 +19,25 @@ defect_severities:
   - cosmetic    # WARN o ignorar
 
 # Umbral mínimo de severidad para FAIL
-fail_on_severity: major
+fail_on_severity: minor
 
 # Contexto adicional que se agrega al prompt
 context: |
   El producto inspeccionado es un artículo genérico de manufactura.
   Evalúa con criterios estándar de control de calidad industrial.
+
+  Rúbrica de severidad (aplícala de forma estricta y literal):
+  - critical: el producto es inutilizable o inseguro. Ej.: grieta que
+    atraviesa más del 50% del cuerpo, pieza estructural rota o faltante,
+    deformación que impide el uso normal.
+  - major: defecto claramente visible que compromete función o durabilidad
+    pero el producto sigue siendo usable. Ej.: grieta parcial o superficial
+    de cualquier tamaño, golpe con marca visible, pieza desalineada,
+    contaminación visible sobre una superficie funcional.
+  - minor: defecto visible pero cosmético o de bajo impacto funcional. Ej.:
+    mancha pequeña, rasguño superficial leve, variación de color sutil.
+  - cosmetic: imperfección casi imperceptible que no afecta función ni
+    percepción de calidad del producto terminado.
+
+  Ante la duda entre dos niveles, clasifica siempre en el nivel más alto
+  (más severo). No subestimes grietas, roturas o piezas faltantes.

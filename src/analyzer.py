@@ -25,12 +25,25 @@ except Exception:  # noqa: BLE001 - dep opcional: ausente (ImportError) o
     calculate_cost = None
     send_metric_background = None
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-haiku-4-5"  # modelo por defecto si settings no especifica api.model
 MAX_TOKENS = 1024
 
-# Precios de Claude Sonnet 4.6 (USD por token) para el costo estimado en dashboard
-INPUT_TOKEN_PRICE = 3.00 / 1_000_000
-OUTPUT_TOKEN_PRICE = 15.00 / 1_000_000
+# Precios (USD por millón de tokens: input, output) para el costo estimado del
+# dashboard. Al cambiar de modelo en settings.yaml (api.model), agregar aquí su
+# fila; si el modelo no está listado, se usa el fallback de Haiku 4.5.
+MODEL_PRICES = {
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-sonnet-5": (3.00, 15.00),
+    "claude-opus-4-8": (5.00, 25.00),
+}
+_FALLBACK_PRICE = MODEL_PRICES[MODEL]
+
+
+def _prices_for(model: str) -> tuple[float, float]:
+    """Devuelve (precio_input, precio_output) por token para `model`."""
+    in_m, out_m = MODEL_PRICES.get(model, _FALLBACK_PRICE)
+    return in_m / 1_000_000, out_m / 1_000_000
 
 # El formato de la respuesta lo garantizan los structured outputs (ver VisionVerdict),
 # no el prompt: aquí solo describimos la tarea y la semántica de los campos.
@@ -79,12 +92,15 @@ class InspectionResult:
     defects: list[Defect]
     summary: str           # frase corta de resumen
     evaluable: bool        # False si la imagen no es evaluable
-    raw_response: str      # texto completo de Claude (para debug)
+    raw_response: str      # texto completo del modelo final (para debug)
     timestamp: datetime = field(default_factory=datetime.now)
     latency_ms: int = 0
     # Tokens reales reportados por la API — alimentan el costo estimado
     input_tokens: int = 0
     output_tokens: int = 0
+    model: str = ""              # modelo que produjo este veredicto
+    escalated: bool = False      # True si un modelo más capaz confirmó el veredicto
+    primary_raw_response: str = ""  # raw del modelo primario cuando hubo escalado
 
 
 class VisionAnalyzer:
@@ -92,15 +108,32 @@ class VisionAnalyzer:
         self,
         api_key: str,
         profile: dict,
+        model: str = MODEL,
         max_retries: int = 3,
         observatory_url: str = "",
         observatory_token: str = "",
+        escalation_model: str = "",
+        escalate_on: list[str] | None = None,
     ):
-        # El SDK reintenta 429/408/409/5xx con backoff exponencial y respeta
-        # `retry-after`. Subimos el default (2) para más resiliencia en sesiones
-        # largas; el worker captura lo que quede sin tumbar el loop.
+        """Crea el cliente Anthropic y guarda el perfil activo y los acumuladores de costo.
+
+        El SDK reintenta 429/408/409/5xx con backoff exponencial y respeta
+        `retry-after`. Subimos el default (2) para más resiliencia en sesiones
+        largas; el worker captura lo que quede sin tumbar el loop.
+
+        Escalado híbrido (opcional): si ``escalation_model`` está seteado y el
+        veredicto primario cae en ``escalate_on`` (default WARN/FAIL), se hace
+        una segunda llamada con ese modelo más capaz sobre el mismo frame y su
+        veredicto reemplaza al primario. El raw primario queda para auditoría.
+        """
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries)
         self.profile = profile
+        self.model = model
+        # Precios por token derivados del modelo, para el costo estimado
+        self._input_price, self._output_price = _prices_for(model)
+        # Escalado híbrido
+        self.escalation_model = escalation_model
+        self.escalate_on = set(escalate_on or ["WARN", "FAIL"])
         # Observabilidad: activa solo si hay URL configurada y el SDK instalado.
         self._observatory_url = observatory_url
         self._observatory_token = observatory_token
@@ -108,18 +141,21 @@ class VisionAnalyzer:
         self.total_analyses = 0
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        # Costo acumulado en USD (se suma por llamada con el precio del modelo
+        # usado — necesario cuando el escalado mezcla modelos de distinto precio)
+        self.total_cost_usd = 0.0
 
     def set_profile(self, profile: dict) -> None:
+        """Cambia el perfil de inspección activo (usado al rotar con la tecla P)."""
         self.profile = profile
 
     @property
     def estimated_cost_usd(self) -> float:
-        return (
-            self.total_input_tokens * INPUT_TOKEN_PRICE
-            + self.total_output_tokens * OUTPUT_TOKEN_PRICE
-        )
+        """Costo acumulado de la sesión en USD (suma por llamada; incluye escalados)."""
+        return self.total_cost_usd
 
     def _build_user_message(self) -> str:
+        """Arma el texto de criterios de inspección (perfil activo) que acompaña a la imagen."""
         return f"""
 {self.profile['inspection_criteria']}
 
@@ -132,18 +168,16 @@ Criterios de PASS: sin defectos o solo defectos cosméticos tolerables.
 Analiza la imagen adjunta y responde con el JSON de inspección.
 """
 
-    def analyze(self, frame_b64: str) -> InspectionResult:
-        """Envía el frame a Claude Vision y retorna el resultado parseado.
+    def _call(self, model: str, frame_b64: str) -> InspectionResult:
+        """Hace una llamada a `model` con el frame y retorna el resultado parseado.
 
         Usa structured outputs (``messages.parse`` con el esquema ``VisionVerdict``):
         la API garantiza un JSON que valida contra el esquema, sin parseo manual.
-
-        Los errores de API se propagan: el llamador (AnalysisWorker) decide
-        cómo seguir sin tumbar el loop de captura.
+        Los errores de API se propagan al llamador.
         """
         start = time.monotonic()
         response = self._client.messages.parse(
-            model=MODEL,
+            model=model,
             max_tokens=MAX_TOKENS,
             system=SYSTEM_PROMPT,
             messages=[
@@ -181,13 +215,41 @@ Analiza la imagen adjunta y responde con el JSON de inspección.
 
         result.input_tokens = getattr(response.usage, "input_tokens", 0)
         result.output_tokens = getattr(response.usage, "output_tokens", 0)
-        self.total_analyses += 1
-        self.total_input_tokens += result.input_tokens
-        self.total_output_tokens += result.output_tokens
-        self._report_metric(result)
+        result.model = model
         return result
 
-    def _report_metric(self, result: InspectionResult) -> None:
+    def _account(self, result: InspectionResult, model: str) -> None:
+        """Acumula tokens y costo de una llamada, con el precio del modelo usado."""
+        in_price, out_price = _prices_for(model)
+        self.total_input_tokens += result.input_tokens
+        self.total_output_tokens += result.output_tokens
+        self.total_cost_usd += (
+            result.input_tokens * in_price + result.output_tokens * out_price
+        )
+
+    def analyze(self, frame_b64: str) -> InspectionResult:
+        """Analiza el frame; escala a un modelo más capaz si está configurado.
+
+        Los errores de API se propagan: el llamador (AnalysisWorker) decide
+        cómo seguir sin tumbar el loop de captura.
+        """
+        primary = self._call(self.model, frame_b64)
+        self._account(primary, self.model)
+        self.total_analyses += 1
+
+        # Escalado híbrido: confirmar WARN/FAIL con un modelo más capaz
+        if self.escalation_model and primary.verdict in self.escalate_on:
+            escalated = self._call(self.escalation_model, frame_b64)
+            self._account(escalated, self.escalation_model)
+            escalated.escalated = True
+            escalated.primary_raw_response = primary.raw_response
+            self._report_metric(escalated, self.escalation_model)
+            return escalated
+
+        self._report_metric(primary, self.model)
+        return primary
+
+    def _report_metric(self, result: InspectionResult, model: str | None = None) -> None:
         """Reporta la métrica a llm-observatory (fire-and-forget, no bloquea).
 
         Side-channel: replica el esquema que MonitoredAnthropic postea a
@@ -197,14 +259,16 @@ Analiza la imagen adjunta y responde con el JSON de inspección.
         if not (self._observatory_url and send_metric_background is not None):
             return
         try:
+            model = model or self.model
+            in_price, out_price = _prices_for(model)
             in_t, out_t = result.input_tokens, result.output_tokens
             cost = (
-                calculate_cost(MODEL, in_t, out_t)
+                calculate_cost(model, in_t, out_t)
                 if calculate_cost is not None
-                else in_t * INPUT_TOKEN_PRICE + out_t * OUTPUT_TOKEN_PRICE
+                else in_t * in_price + out_t * out_price
             )
             metric = {
-                "model": MODEL,
+                "model": model,
                 "input_tokens": in_t,
                 "output_tokens": out_t,
                 "total_tokens": in_t + out_t,

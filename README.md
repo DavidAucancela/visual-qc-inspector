@@ -58,10 +58,19 @@ inspection_criteria: |
   - Nivel de llenado fuera del rango visible esperado
   - Etiqueta despegada, torcida o ilegible
 
-fail_on_severity: major
+fail_on_severity: minor
 context: |
   Línea de envasado de bebidas. La botella debe estar íntegra
   y correctamente sellada antes de empacarse.
+
+  Rúbrica de severidad (aplícala de forma estricta y literal):
+  - critical: botella rota o tapa completamente ausente.
+  - major: grieta o fisura visible, tapa mal cerrada, nivel de llenado
+    claramente fuera de rango.
+  - minor: etiqueta ligeramente torcida sin afectar legibilidad.
+  - cosmetic: variación mínima sin impacto en integridad ni presentación.
+
+  Ante la duda entre dos niveles, clasifica siempre en el nivel más alto.
 ```
 
 Y usarlo: `python main.py --profile mi_producto` (o cambiar `active_profile`
@@ -69,11 +78,27 @@ en `config/settings.yaml`).
 
 ## Configuración (`config/settings.yaml`)
 
+- **`api.model`** — modelo de Claude Vision (default `claude-haiku-4-5`).
+  Cambiarlo ajusta también el costo estimado del dashboard si el modelo está en
+  `MODEL_PRICES` (`src/analyzer.py`).
+- **`api.escalation_model`** — escalado híbrido (vacío = desactivado). Si el
+  modelo primario (barato) devuelve un veredicto en `api.escalate_on`
+  (default `[WARN, FAIL]`), se re-consulta el mismo frame con este modelo más
+  capaz y su veredicto manda. Como los PASS son mayoría, el costo extra es
+  marginal y se recupera precisión donde importa. Ej.:
+  `escalation_model: claude-sonnet-4-6`.
 - **`frame_selector.mode`** — cuándo analizar: `timer` (cada N segundos), `diff`
   (cuando el frame cambia más que un umbral) o `manual` (solo con SPACE).
 - **`decision.debounce_frames`** — un FAIL solo se confirma tras N análisis
   consecutivos en FAIL (evita falsos positivos por un frame malo). Excepción:
   defectos `critical` con confianza alta fallan de inmediato.
+- **`fail_on_severity` del perfil activo** — no es solo una instrucción en el
+  prompt: `DecisionEngine` la aplica en código. Si cualquier defecto detectado
+  alcanza ese umbral de severidad (`cosmetic < minor < major < critical`) con
+  confianza suficiente, el veredicto se fuerza a FAIL aunque Claude haya
+  devuelto WARN/PASS. Esto importa especialmente con modelos económicos como
+  Haiku, que a veces subestiman la severidad global aunque detecten bien los
+  defectos individuales.
 - **`roi.enabled`** — al iniciar, seleccionar interactivamente la región de
   interés; solo esa zona se envía a análisis (menos tokens, más precisión).
 - **`storage.save_pass_frames`** — desactivado por defecto para no llenar disco.
@@ -90,11 +115,11 @@ y frames JPEG en `data/sessions/<id>/frames/`.
 
 ## Costo de API y rendimiento
 
-Estimación con Claude Sonnet (`claude-sonnet-4-6`, $3/M tokens entrada, $15/M salida):
+Estimación con Claude Haiku (`claude-haiku-4-5`, $1/M tokens entrada, $5/M salida):
 
 - Un frame JPEG de 1024px ≈ 150–300 KB → ~200–400 tokens de imagen
 - Con `timer_interval_sec: 3` → ~20 análisis/minuto → ~8000 tokens/minuto
-- **Aproximadamente $0.002–0.003 USD por análisis** (el dashboard muestra el
+- **Aproximadamente $0.0007–0.001 USD por análisis** (el dashboard muestra el
   costo acumulado real de la sesión usando los tokens reportados por la API)
 
 Optimizaciones ya implementadas:
@@ -116,6 +141,14 @@ Optimizaciones ya implementadas:
   adivinar.
 - Claude Vision no reemplaza una certificación metrológica: úsalo como filtro
   inteligente y registro auditable, con revisión humana de los FAIL.
+- El proyecto usa `claude-haiku-4-5` (el modelo más económico de Claude) para
+  minimizar costo; a cambio, es algo menos preciso clasificando severidad que
+  Sonnet. Se compensa con `fail_on_severity` estricto (`minor`), rúbricas de
+  severidad explícitas en cada perfil y enforcement en `DecisionEngine` (ver
+  Configuración arriba). Si en producción se detectan demasiados falsos
+  negativos, subir a `claude-sonnet-4-6`/`claude-sonnet-5` cambiando
+  `api.model` en `config/settings.yaml` es la palanca más directa (el costo
+  del dashboard se ajusta solo vía `MODEL_PRICES` en `src/analyzer.py`).
 
 ## Tests
 

@@ -35,6 +35,7 @@ SEVERITY_COLOR = {
 
 class Dashboard:
     def __init__(self, settings: dict):
+        """Guarda settings (por si se necesitan opciones de overlay a futuro)."""
         self.settings = settings
         self._frame_count = 0  # para animar el spinner
 
@@ -51,6 +52,7 @@ class Dashboard:
         est_cost_usd: float = 0.0,
         show_defects: bool = True,
     ) -> np.ndarray:
+        """Compone el overlay completo (estado, defectos, barra inferior, spinner) sobre una copia del frame."""
         self._frame_count += 1
         display = frame.copy()
 
@@ -63,6 +65,7 @@ class Dashboard:
         return display
 
     def _draw_status_panel(self, img, verdict, result, fps, analysis_count, est_cost_usd):
+        """Dibuja el panel superior izquierdo: veredicto actual, resumen y métricas (FPS/latencia/costo)."""
         h, w = img.shape[:2]
         panel_w, panel_h = 360, 130
         self._overlay_rect(img, (10, 10), (10 + panel_w, 10 + panel_h))
@@ -86,6 +89,7 @@ class Dashboard:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, GRAY, 1, cv2.LINE_AA)
 
     def _draw_defects_panel(self, img, result: InspectionResult):
+        """Dibuja el panel superior derecho con hasta 6 defectos detectados y su severidad."""
         h, w = img.shape[:2]
         panel_w = 380
         x0 = w - panel_w - 10
@@ -104,6 +108,7 @@ class Dashboard:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, WHITE, 1, cv2.LINE_AA)
 
     def _draw_bottom_bar(self, img, profile_name: str):
+        """Dibuja la barra inferior con el listado de teclas y el nombre del perfil activo."""
         h, w = img.shape[:2]
         self._overlay_rect(img, (0, h - 34), (w, h), alpha=0.7)
         keys = "SPACE: analizar | Q: salir | R: reporte | P: perfil | D: defectos | S: screenshot"

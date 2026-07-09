@@ -15,6 +15,7 @@ class Preprocessor:
         jpeg_quality: int = 85,
         enhance_contrast: bool = False,
     ):
+        """Guarda los parámetros de resize/compresión/contraste a aplicar por frame."""
         self.target_width = target_width
         self.jpeg_quality = jpeg_quality
         self.enhance_contrast = enhance_contrast
@@ -43,6 +44,7 @@ class Preprocessor:
         return cv2.cvtColor(cv2.merge((l_channel, a, b)), cv2.COLOR_LAB2BGR)
 
     def to_base64(self, frame: np.ndarray) -> str:
+        """Codifica el frame a JPEG y lo retorna como string base64 para la API de Claude."""
         ok, buf = cv2.imencode(
             ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
         )

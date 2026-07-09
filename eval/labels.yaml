@@ -1,0 +1,23 @@
+# Golden set de evaluación del pipeline de inspección.
+#
+# Cada entrada etiqueta una imagen con el resultado ESPERADO (verdad de campo,
+# puesta a mano por un humano). run_eval.py corre el pipeline real sobre cada
+# imagen y compara contra estas etiquetas.
+#
+# Campos por entrada:
+#   image             (obligatorio) ruta relativa a eval/  (ej. images/foo.jpg)
+#   profile           (opcional)    perfil a usar; default: el que pase --profile
+#   expected_verdict  (obligatorio) PASS | WARN | FAIL esperado
+#   expected_severity (opcional)    severidad máxima de defecto esperada:
+#                                    critical | major | minor | cosmetic | none
+#                                    ("none" = producto sin defectos)
+#
+# Para ampliar el set: dejá la imagen en eval/images/ y agregá su entrada acá.
+# Cuantas más imágenes (y más variadas: buenas, límite, malas), más confiable
+# la métrica. Apuntá a cubrir cada nivel de severidad al menos una vez.
+
+samples:
+  - image: images/test_sample.jpg
+    profile: generic
+    expected_verdict: FAIL
+    expected_severity: major

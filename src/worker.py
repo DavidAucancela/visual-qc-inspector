@@ -34,6 +34,7 @@ class AnalysisWorker(threading.Thread):
         alerter: Alerter,
         session_id: int,
     ):
+        """Conecta los componentes del pipeline de análisis (no arranca el thread todavía)."""
         super().__init__(daemon=True, name="analysis-worker")
         self.analyzer = analyzer
         self.decision = decision
@@ -59,22 +60,27 @@ class AnalysisWorker(threading.Thread):
             return False
 
     def get_latest(self) -> FinalVerdict | None:
+        """Retorna el último veredicto disponible (para que el dashboard lo muestre)."""
         with self._lock:
             return self._latest
 
     @property
     def is_analyzing(self) -> bool:
+        """True mientras hay una llamada a Claude en curso."""
         return self._is_analyzing
 
     @property
     def last_error(self) -> str:
+        """Descripción corta del último error de análisis, o "" si el último intento fue exitoso."""
         with self._lock:
             return self._last_error
 
     def stop(self) -> None:
+        """Señala al thread que termine su loop tras el ciclo actual."""
         self._stop_event.set()
 
     def run(self) -> None:
+        """Loop del thread: toma frames de la cola, analiza, decide, persiste y alerta."""
         while not self._stop_event.is_set():
             try:
                 frame_b64, raw_frame = self._queue.get(timeout=0.2)

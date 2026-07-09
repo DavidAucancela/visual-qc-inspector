@@ -8,4 +8,4 @@ data/
 reports/
 *.db
 .DS_Store
-test_sample.jpg
+/test_sample.jpg

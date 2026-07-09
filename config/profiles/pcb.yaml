@@ -12,7 +12,22 @@ inspection_criteria: |
   - Contaminación por flux o residuos
   - Daños en el substrato (FR4)
 
-fail_on_severity: major
+fail_on_severity: minor
 context: |
   Estándar de referencia: IPC-A-610 clase 2 (electrónica de uso general).
   Si no puedes ver claramente un área, indícalo como "no evaluable".
+
+  Rúbrica de severidad (aplícala de forma estricta y literal):
+  - critical: componente faltante o invertido en un pad crítico, pista
+    quemada o cortada, puente de estaño entre pines de un componente
+    activo — cualquier defecto que impida el funcionamiento de la tarjeta.
+  - major: soldadura fría o insuficiente, componente levantado o
+    descentrado de forma visible, puente de estaño menor, componente mal
+    orientado en una posición no crítica.
+  - minor: residuo de flux visible pero sin puentear pines, marca leve en
+    el substrato sin exponer cobre.
+  - cosmetic: variación de color del flux o silkscreen sin impacto
+    funcional.
+
+  Ante la duda entre dos niveles, clasifica siempre en el nivel más alto
+  (más severo). No subestimes soldaduras frías ni componentes faltantes.
