@@ -152,11 +152,11 @@ def evaluate(model_override: str | None, default_profile: str) -> int:
 
     print(f"\n{'=' * 60}")
     print(f"Veredicto: {verdict_ok}/{evaluated} correctos ({_pct(verdict_ok, evaluated)})")
-    print(f"\nFAIL como clase positiva:")
+    print("\nFAIL como clase positiva:")
     print(f"  TP={tp}  FP={fp}  FN={fn}  TN={tn}")
     print(f"  Precision={precision:.2%}  Recall={recall:.2%}  F1={f1:.2%}")
 
-    print(f"\nMatriz de confusión de severidad (fila=esperada, col=detectada):")
+    print("\nMatriz de confusión de severidad (fila=esperada, col=detectada):")
     header = "  " + " " * 10 + "".join(f"{s[:8]:>10}" for s in SEVERITY_LABELS)
     print(header)
     for exp in SEVERITY_LABELS:

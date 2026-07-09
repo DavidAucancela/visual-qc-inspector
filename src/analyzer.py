@@ -31,13 +31,15 @@ MAX_TOKENS = 1024
 # Precios (USD por millón de tokens: input, output) para el costo estimado del
 # dashboard. Al cambiar de modelo en settings.yaml (api.model), agregar aquí su
 # fila; si el modelo no está listado, se usa el fallback de Haiku 4.5.
+# Fallback literal (precio de Haiku 4.5) — no derivar de MODEL_PRICES[MODEL] para
+# que un modelo no listado nunca genere KeyError, ni siquiera al importar.
+_FALLBACK_PRICE = (1.00, 5.00)
 MODEL_PRICES = {
-    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-haiku-4-5": _FALLBACK_PRICE,
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-sonnet-5": (3.00, 15.00),
     "claude-opus-4-8": (5.00, 25.00),
 }
-_FALLBACK_PRICE = MODEL_PRICES[MODEL]
 
 
 def _prices_for(model: str) -> tuple[float, float]:
