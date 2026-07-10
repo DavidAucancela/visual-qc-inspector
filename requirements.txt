@@ -1,9 +1,15 @@
 anthropic>=0.69
 pydantic>=2
-opencv-python>=4.9
+opencv-python-headless>=4.9
 pyyaml>=6.0
 jinja2>=3.1
 requests>=2.31
 numpy>=1.26
 pytest>=8.0
 python-dotenv>=1.0
+
+# Opcional — observabilidad (métricas a llm-observatory). REQUIERE Python 3.10+
+# (usa `X | None` en runtime; en 3.9 falla al importar). Sin esto el reporte de
+# métricas es no-op. Instalar desde el monorepo:
+#   pip install "git+https://github.com/DavidAucancela/llm-observatory.git#subdirectory=packages/sdk-python"
+# llm-observatory

@@ -26,7 +26,7 @@ import yaml
 from dotenv import load_dotenv
 
 from src.alerter import Alerter
-from src.analyzer import VisionAnalyzer
+from src.analyzer import MODEL, VisionAnalyzer
 from src.capture import CameraCapture
 from src.dashboard import Dashboard
 from src.decision import DecisionEngine
@@ -44,11 +44,13 @@ SESSIONS_DIR = BASE_DIR / "data" / "sessions"
 
 
 def load_settings() -> dict:
+    """Carga config/settings.yaml completo como dict."""
     with open(CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def load_profile(name: str) -> dict:
+    """Carga un perfil de inspección (config/profiles/<name>.yaml); sale si no existe."""
     path = PROFILES_DIR / f"{name}.yaml"
     if not path.exists():
         available = ", ".join(list_profiles())
@@ -58,18 +60,28 @@ def load_profile(name: str) -> dict:
 
 
 def list_profiles() -> list[str]:
+    """Lista los nombres de perfiles disponibles en config/profiles/."""
     return sorted(p.stem for p in PROFILES_DIR.glob("*.yaml"))
 
 
 def build_components(settings: dict, profile: dict, api_key: str):
+    """Instancia y conecta todos los componentes del pipeline a partir de settings."""
     preprocessor = Preprocessor(**settings["preprocessing"])
     frame_selector = FrameSelector(**settings["frame_selector"])
+    api_cfg = settings.get("api", {})
     analyzer = VisionAnalyzer(
         api_key=api_key,
         profile=profile,
-        max_retries=settings.get("api", {}).get("max_retries", 3),
+        model=api_cfg.get("model", MODEL),
+        max_retries=api_cfg.get("max_retries", 3),
+        observatory_url=os.environ.get("OBSERVATORY_URL", ""),
+        observatory_token=os.environ.get("OBSERVATORY_TOKEN", ""),
+        escalation_model=api_cfg.get("escalation_model", ""),
+        escalate_on=api_cfg.get("escalate_on"),
     )
-    decision = DecisionEngine(**settings["decision"])
+    decision = DecisionEngine(
+        **settings["decision"], fail_on_severity=profile.get("fail_on_severity", "major")
+    )
     storage = Storage(str(DB_PATH), str(SESSIONS_DIR), settings.get("storage", {}))
     alerter = Alerter(settings, webhook_url=os.environ.get("WEBHOOK_URL", ""))
     reporter = Reporter(str(BASE_DIR / "templates"), str(BASE_DIR / "reports"))
@@ -107,6 +119,7 @@ def run_single_image(image_path: str, settings: dict, profile: dict, api_key: st
 
 
 def run_report_only() -> None:
+    """Modo --report: regenera el reporte HTML de la última sesión guardada."""
     storage = Storage(str(DB_PATH), str(SESSIONS_DIR))
     session_id = storage.get_last_session_id()
     if session_id is None:
@@ -118,6 +131,7 @@ def run_report_only() -> None:
 
 
 def run_live(settings: dict, profile_name: str, api_key: str) -> None:
+    """Loop principal en vivo: captura de cámara, dashboard OpenCV y manejo de teclas."""
     profile = load_profile(profile_name)
     (preprocessor, frame_selector, analyzer, decision,
      storage, alerter, reporter) = build_components(settings, profile, api_key)
@@ -129,6 +143,8 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
     fps, fps_t0, fps_frames = 0.0, time.monotonic(), 0
 
     with CameraCapture(cam_cfg["device_id"], cam_cfg["width"], cam_cfg["height"]) as cam:
+        print("Calentando cámara (descartando primeros frames)...")
+        cam.warmup(30)  # descarta primeros frames (cámara se estabiliza)
         # ROI: selección interactiva al inicio; valores de config como fallback
         roi = None
         if roi_cfg.get("enabled", False):
@@ -144,13 +160,20 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
         worker.start()
         print(f"Sesión {session_id} iniciada — perfil '{profile['name']}' "
               f"(modo {frame_selector.mode})")
+        cv2.namedWindow("QC Inspector", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("QC Inspector", 1280, 720)
 
         try:
+            loop_frames = 0
             while True:
                 frame = cam.read()
                 if frame is None:
                     print("La cámara dejó de entregar frames.")
                     break
+
+                loop_frames += 1
+                if loop_frames % 30 == 0:  # debug: cada 1 segundo (30 fps)
+                    print(f"  → {loop_frames} frames capturados")
 
                 if roi is not None:
                     frame = cam.crop_roi(frame, roi)
@@ -196,6 +219,7 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
                     profile = load_profile(profile_name)
                     analyzer.set_profile(profile)
                     decision.reset()
+                    decision.set_fail_on_severity(profile.get("fail_on_severity", "major"))
                     print(f"Perfil cambiado a '{profile['name']}' "
                           f"(disponibles: {', '.join(profiles)})")
                 elif key == ord("d"):
@@ -219,6 +243,7 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
 
 
 def main() -> None:
+    """Punto de entrada: parsea argumentos CLI y despacha al modo correspondiente."""
     parser = argparse.ArgumentParser(description="Visual QC Inspector")
     parser.add_argument("--profile", help="nombre del perfil (config/profiles/)")
     parser.add_argument("--no-camera", action="store_true",

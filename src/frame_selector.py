@@ -25,6 +25,7 @@ class FrameSelector:
         timer_interval_sec: float = 3.0,
         diff_threshold: float = 0.15,
     ):
+        """Valida el modo de selección y guarda los parámetros de throttling."""
         if mode not in self.VALID_MODES:
             raise ValueError(f"Modo inválido: {mode!r} (usar {self.VALID_MODES})")
         self.mode = mode
@@ -39,6 +40,7 @@ class FrameSelector:
         self._triggered = True
 
     def should_analyze(self, frame: np.ndarray) -> bool:
+        """Decide si el frame actual debe enviarse a análisis, según el modo activo."""
         if self._triggered:
             self._triggered = False
             self._mark_analyzed(frame)
@@ -65,5 +67,6 @@ class FrameSelector:
         return False
 
     def _mark_analyzed(self, frame: np.ndarray) -> None:
+        """Actualiza el timestamp y el frame de referencia tras decidir analizar."""
         self._last_analysis_ts = time.monotonic()
         self._prev_frame = frame.copy()

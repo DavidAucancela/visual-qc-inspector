@@ -16,6 +16,7 @@ THUMB_WIDTH = 320
 
 class Reporter:
     def __init__(self, template_path: str = "templates", output_dir: str = "reports"):
+        """Crea el directorio de reportes y configura el entorno jinja2."""
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._env = Environment(
@@ -52,6 +53,7 @@ class Reporter:
 
     @staticmethod
     def _thumbnail_b64(frame_path: str) -> str:
+        """Redimensiona el frame guardado en disco y lo codifica a base64 para embeber en el HTML."""
         frame = cv2.imread(frame_path)
         if frame is None:
             return ""
@@ -67,6 +69,7 @@ class Reporter:
 
     @staticmethod
     def _session_duration(stats: dict) -> str:
+        """Formatea la duración de la sesión (started_at a ended_at) como texto legible."""
         started, ended = stats.get("started_at"), stats.get("ended_at")
         if not started:
             return "-"

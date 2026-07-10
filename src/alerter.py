@@ -21,6 +21,7 @@ PASS_SOUND_MAC = "/System/Library/Sounds/Glass.aiff"
 
 class Alerter:
     def __init__(self, settings: dict, webhook_url: str = ""):
+        """Lee la sección `alerts` de settings.yaml para saber qué alertas están activas."""
         alerts = settings.get("alerts", {})
         self.sound_on_fail = alerts.get("sound_on_fail", True)
         self.sound_on_pass = alerts.get("sound_on_pass", False)
@@ -29,6 +30,7 @@ class Alerter:
         self.webhook_url = webhook_url
 
     def alert_fail(self, result: InspectionResult) -> None:
+        """Dispara sonido, notificación del OS y/o webhook para un FAIL confirmado."""
         if self.sound_on_fail:
             self._run_async(self._play_sound, FAIL_SOUND_MAC)
         if self.os_notification:
@@ -37,15 +39,18 @@ class Alerter:
             self._run_async(self._send_webhook, result)
 
     def alert_pass(self) -> None:
+        """Reproduce sonido de PASS si `sound_on_pass` está activado en config."""
         if self.sound_on_pass:
             self._run_async(self._play_sound, PASS_SOUND_MAC)
 
     @staticmethod
     def _run_async(fn, *args) -> None:
+        """Ejecuta `fn` en un thread daemon para no bloquear el worker de análisis."""
         threading.Thread(target=fn, args=args, daemon=True).start()
 
     @staticmethod
     def _play_sound(mac_sound_path: str) -> None:
+        """Reproduce un sonido según el OS (afplay en mac, winsound en Windows, campana ASCII de fallback)."""
         try:
             if _IS_MAC:
                 subprocess.run(["afplay", mac_sound_path], check=False, timeout=5)
@@ -62,6 +67,7 @@ class Alerter:
 
     @staticmethod
     def _notify(title: str, message: str) -> None:
+        """Muestra una notificación nativa del OS (solo implementado en mac vía osascript)."""
         try:
             if _IS_MAC:
                 script = f'display notification "{message}" with title "{title}"'

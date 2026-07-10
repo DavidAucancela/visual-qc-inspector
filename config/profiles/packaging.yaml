@@ -11,7 +11,21 @@ inspection_criteria: |
   - Colores fuera de especificación o decoloración
   - Fecha de vencimiento o lote ausente o ilegible
 
-fail_on_severity: major
+fail_on_severity: minor
 context: |
   Inspección de presentación comercial. El producto debe llegar al
   consumidor final en condiciones óptimas de presentación.
+
+  Rúbrica de severidad (aplícala de forma estricta y literal):
+  - critical: código de barras o fecha de vencimiento/lote completamente
+    ilegibles o ausentes; caja rota o abierta que compromete el contenido.
+  - major: etiqueta despegada, arrugada o mal colocada de forma evidente;
+    texto ilegible en información obligatoria (ingredientes, marca);
+    daño visible en la caja (golpe, rasgadura, humedad).
+  - minor: decoloración leve, pequeña arruga cosmética en la etiqueta,
+    variación de tono que no afecta la legibilidad.
+  - cosmetic: imperfección casi imperceptible sin impacto en presentación
+    ni información obligatoria.
+
+  Ante la duda entre dos niveles, clasifica siempre en el nivel más alto
+  (más severo). No subestimes etiquetas despegadas ni códigos ilegibles.
