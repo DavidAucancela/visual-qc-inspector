@@ -8,6 +8,32 @@ import numpy as np
 _ROI_WINDOW = "Seleccionar ROI (arrastrar y ENTER, C para cancelar)"
 
 
+def list_cameras(max_index: int = 8) -> list[dict]:
+    """Sondea los índices de cámara 0..max_index-1 y reporta cuáles abren.
+
+    Útil para elegir el `device_id` correcto: en macOS la Continuity Camera del
+    iPhone suele tomar el índice 0 y desplazar la webcam integrada al 1. OpenCV
+    no expone el nombre del dispositivo, así que se reporta solo índice,
+    resolución y si entrega un frame (para distinguir uno usable de uno que
+    abre pero no captura).
+    """
+    found = []
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            ok, _ = cap.read()
+            found.append(
+                {
+                    "index": i,
+                    "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                    "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+                    "delivers_frame": ok,
+                }
+            )
+        cap.release()
+    return found
+
+
 class CameraCapture:
     """Wrapper de cv2.VideoCapture con context manager y selección de ROI."""
 

@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 from src.alerter import Alerter
 from src.analyzer import MODEL, VisionAnalyzer
-from src.capture import CameraCapture
+from src.capture import CameraCapture, list_cameras
 from src.dashboard import Dashboard
 from src.decision import DecisionEngine
 from src.frame_selector import FrameSelector
@@ -116,6 +116,23 @@ def run_single_image(image_path: str, settings: dict, profile: dict, api_key: st
     path = reporter.generate(session_id, storage)
     print(f"\nReporte: {path}")
     storage.close()
+
+
+def run_list_cameras() -> None:
+    """Modo --list-cameras: sondea y muestra las cámaras disponibles y sus índices."""
+    print("Sondeando cámaras disponibles...\n")
+    cams = list_cameras()
+    if not cams:
+        print("No se detectó ninguna cámara.")
+        return
+    for c in cams:
+        frame_note = "entrega frame" if c["delivers_frame"] else "abre pero NO entrega frame"
+        print(f"  index {c['index']}: {c['width']}x{c['height']} — {frame_note}")
+    print(
+        "\nElegí el índice de tu webcam y ponelo en config/settings.yaml "
+        "(camera.device_id),\no usalo directo con:  python main.py --device N\n"
+        "En macOS, la cámara del iPhone (Continuity Camera) suele ser el index 0."
+    )
 
 
 def run_report_only() -> None:
@@ -251,7 +268,15 @@ def main() -> None:
     parser.add_argument("--image", help="analizar una sola imagen y salir")
     parser.add_argument("--report", action="store_true",
                         help="solo generar reporte de la última sesión")
+    parser.add_argument("--list-cameras", action="store_true",
+                        help="listar cámaras disponibles y sus índices, y salir")
+    parser.add_argument("--device", type=int,
+                        help="índice de cámara a usar (override de camera.device_id)")
     args = parser.parse_args()
+
+    if args.list_cameras:
+        run_list_cameras()
+        return
 
     if args.report:
         run_report_only()
@@ -264,6 +289,8 @@ def main() -> None:
 
     settings = load_settings()
     profile_name = args.profile or settings.get("active_profile", "generic")
+    if args.device is not None:
+        settings.setdefault("camera", {})["device_id"] = args.device
 
     if args.image:
         run_single_image(args.image, settings, load_profile(profile_name), api_key)

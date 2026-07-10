@@ -1,5 +1,7 @@
 camera:
-  device_id: 0
+  device_id: 1           # webcam integrada. En macOS el index 0 suele ser la
+                         # Continuity Camera del iPhone; usar `python main.py
+                         # --list-cameras` para ver los índices disponibles.
   width: 1280
   height: 720
 
