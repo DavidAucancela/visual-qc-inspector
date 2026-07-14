@@ -2,6 +2,21 @@
 
 ## v2 (en progreso) — Fase 2: robustez operativa
 
+### 2.4 Reconexión de cámara
+- `CameraCapture.try_reopen()`: reintenta abrir el dispositivo sin lanzar (libera el
+  handle previo y valida con una lectura real; abre-pero-no-captura cuenta como fallo).
+- En vivo, si `cam.read()` devuelve `None`, `run_live` ya no termina: `_reconnect_camera()`
+  muestra "CAMARA DESCONECTADA" en la ventana, reintenta con backoff (0.5→5 s) y sigue
+  capturando al reconectar. Q sale durante la desconexión.
+
+### 2.3 Retención de evidencia (`storage.retention_days`)
+- Nuevo `retention_days` en `settings.yaml` (default 0 = nunca borra). Al construir
+  `Storage` (arranque de cualquier modo), `_apply_retention()` borra las sesiones cuyo
+  `started_at` sea más viejo que N días: filas de `sessions` + `inspections` y la
+  carpeta `data/sessions/<id>/`. Borrado de disco best-effort
+  (`shutil.rmtree(ignore_errors=True)`) — un fallo de FS no aborta el arranque. Evita
+  que `data/sessions/` crezca sin límite en uso continuo.
+
 ### 2.1 Modo batch (`--dir carpeta/`)
 - `run_batch()` en `main.py`: analiza todas las imágenes de una carpeta
   (`.jpg/.jpeg/.png/.bmp/.webp`) en **una sola sesión** y genera **un solo reporte**.
@@ -24,8 +39,9 @@
   (matriz). Los tests mockean API y cámara — no requieren secrets. Badge en el README.
 
 ### Verificación
-- 45/45 tests pasan (4 nuevos: batch en una sesión + carpeta vacía; export escribe
-  CSV con defectos + sale sin sesiones).
+- 51/51 tests pasan (10 nuevos: batch en una sesión + carpeta vacía; export escribe
+  CSV con defectos + sale sin sesiones; retención borra sesiones viejas + retención 0
+  conserva todo; try_reopen éxito/no-abre/abre-sin-frame/libera-handle-previo).
 
 ## v2 — Fase 1: precisión medible
 

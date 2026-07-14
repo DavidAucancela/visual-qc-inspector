@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 import yaml
 from dotenv import load_dotenv
 
@@ -245,6 +246,37 @@ def run_export(csv_path: str, session_id: int | None = None) -> None:
         storage.close()
 
 
+def _reconnect_camera(cam: CameraCapture, width: int, height: int) -> bool:
+    """Muestra 'CAMARA DESCONECTADA' y reintenta reabrir con backoff.
+
+    Mantiene la ventana OpenCV viva (para poder salir con Q durante la caída).
+    Retorna True cuando reconecta, False si el usuario presionó Q. El backoff
+    crece 0.5→1→2→4→5 s (tope 5 s) para no martillar el dispositivo.
+    """
+    print("La cámara dejó de entregar frames. Reintentando reconexión...")
+    screen = np.zeros((height, width, 3), dtype=np.uint8)
+    delay = 0.5
+    attempt = 0
+    while True:
+        attempt += 1
+        frame = screen.copy()
+        cv2.putText(frame, "CAMARA DESCONECTADA", (40, height // 2 - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
+        cv2.putText(frame, f"Reintentando... (intento {attempt}) - Q para salir",
+                    (40, height // 2 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                    (255, 255, 255), 2)
+        cv2.imshow("QC Inspector", frame)
+        # waitKey hace de sleep y a la vez atiende el teclado
+        key = cv2.waitKey(int(delay * 1000)) & 0xFF
+        if key == ord("q"):
+            return False
+        if cam.try_reopen():
+            print(f"Cámara reconectada tras {attempt} intento(s).")
+            cam.warmup(10)
+            return True
+        delay = min(delay * 2, 5.0)
+
+
 def run_live(settings: dict, profile_name: str, api_key: str) -> None:
     """Loop principal en vivo: captura de cámara, dashboard OpenCV y manejo de teclas."""
     profile = load_profile(profile_name)
@@ -283,8 +315,9 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
             while True:
                 frame = cam.read()
                 if frame is None:
-                    print("La cámara dejó de entregar frames.")
-                    break
+                    if _reconnect_camera(cam, cam_cfg["width"], cam_cfg["height"]):
+                        continue  # reconectada: seguir capturando
+                    break  # el usuario pidió salir (Q) durante la desconexión
 
                 loop_frames += 1
                 if loop_frames % 30 == 0:  # debug: cada 1 segundo (30 fps)

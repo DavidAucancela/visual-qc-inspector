@@ -55,6 +55,25 @@ class CameraCapture:
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         return self
 
+    def try_reopen(self) -> bool:
+        """Reintenta abrir la cámara sin lanzar. True si vuelve a entregar frames.
+
+        Usado por el loop en vivo para reconectar tras una desconexión (webcam
+        desenchufada) en lugar de terminar. Libera el handle previo y prueba una
+        lectura real: un dispositivo que abre pero no captura cuenta como fallo.
+        """
+        self.release()
+        try:
+            self._cap = cv2.VideoCapture(self.device_id)
+            if not self._cap.isOpened():
+                return False
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            ok, _ = self._cap.read()
+            return ok
+        except cv2.error:
+            return False
+
     def warmup(self, frames: int = 10) -> None:
         """Descarta los primeros N frames para que la cámara se estabilice.
 
