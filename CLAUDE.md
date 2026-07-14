@@ -57,6 +57,7 @@ Los 3 perfiles actuales tienen `fail_on_severity: minor` (más estricto que el d
 python main.py                       # inspección en vivo (active_profile de config/settings.yaml)
 python main.py --profile pcb         # perfil específico
 python main.py --image foto.jpg      # analizar una imagen estática (sin cámara)
+python main.py --dir carpeta/        # analizar un lote de imágenes (una sesión, un reporte)
 python main.py --report              # regenerar reporte de la última sesión
 python main.py --export out.csv      # exportar inspecciones a CSV (--session N; default última)
 python main.py --list-cameras        # listar cámaras y sus índices (elegir device_id)
@@ -84,7 +85,7 @@ Los tests no requieren webcam ni API key real — el cliente `anthropic` se mock
 
 ## Estructura y flujo de datos
 
-- `main.py` orquesta: `run_live` (cámara), `run_single_image` (--image), `run_report_only` (--report). `build_components()` arma todo desde `settings` (cada sección de `settings.yaml` mapea a un `__init__` por `**kwargs`).
+- `main.py` orquesta: `run_live` (cámara), `run_single_image` (--image), `run_batch` (--dir, un lote en una sola sesión reutilizando el path de --image), `run_export` (--export a CSV, solo lectura de SQLite), `run_report_only` (--report). `build_components()` arma todo desde `settings` (cada sección de `settings.yaml` mapea a un `__init__` por `**kwargs`).
 - El loop de video (30fps) nunca espera a la API: `src/worker.py` (`AnalysisWorker`) corre en un thread con `queue.Queue(maxsize=1)` — si llega un frame mientras se analiza otro, se descarta. El estado compartido (`get_latest()`, `is_analyzing`) está protegido por Lock. El loop solo hace `worker.submit()` cuando `not is_analyzing` **y** `frame_selector.should_analyze()`.
 - Errores de API los captura el worker (`except anthropic.APIError`), registra `last_error` y sigue; cualquier otra excepción se imprime y también se traga — el loop nunca cae.
 - `VisionAnalyzer.analyze()` propaga errores de API; es el worker quien los captura para no tumbar el loop.

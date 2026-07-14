@@ -101,6 +101,45 @@ def test_run_single_image_missing_file_exits(isolated_main, tmp_path):
         )
 
 
+def test_run_batch_one_session_all_images(isolated_main, tmp_path):
+    """--dir analiza todas las imágenes en una sola sesión y genera un solo reporte."""
+    tmp, reports_dir = isolated_main
+    batch_dir = tmp_path / "lote"
+    batch_dir.mkdir()
+    for name in ("a.jpg", "b.png", "c.jpg"):
+        _write_image(batch_dir / name)
+    # Un archivo no-imagen debe ignorarse
+    (batch_dir / "notas.txt").write_text("no soy imagen")
+
+    settings = main.load_settings()
+    profile = main.load_profile("generic")
+    main.run_batch(str(batch_dir), settings, profile, api_key="test-key")
+
+    # Un solo reporte para todo el lote
+    assert len(list(reports_dir.glob("*.html"))) == 1
+
+    from src.storage import Storage
+    storage = Storage(str(main.DB_PATH), str(main.SESSIONS_DIR))
+    try:
+        sid = storage.get_last_session_id()
+        stats = storage.get_session_stats(sid)
+        # Las 3 imágenes en una sola sesión (el .txt se ignoró)
+        assert stats["total_inspections"] == 3
+        assert stats["fail_count"] == 3  # el mock siempre devuelve FAIL
+    finally:
+        storage.close()
+
+
+def test_run_batch_empty_dir_exits(isolated_main, tmp_path):
+    """--dir sobre una carpeta sin imágenes sale con error."""
+    empty = tmp_path / "vacia"
+    empty.mkdir()
+    settings = main.load_settings()
+    profile = main.load_profile("generic")
+    with pytest.raises(SystemExit):
+        main.run_batch(str(empty), settings, profile, api_key="test-key")
+
+
 def test_run_export_writes_csv(isolated_main, tmp_path):
     """--export vuelca las inspecciones de la última sesión a CSV con sus defectos."""
     import csv as _csv

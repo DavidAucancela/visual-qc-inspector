@@ -2,6 +2,15 @@
 
 ## v2 (en progreso) — Fase 2: robustez operativa
 
+### 2.1 Modo batch (`--dir carpeta/`)
+- `run_batch()` en `main.py`: analiza todas las imágenes de una carpeta
+  (`.jpg/.jpeg/.png/.bmp/.webp`) en **una sola sesión** y genera **un solo reporte**.
+  Reutiliza el pipeline de `--image` (preprocess → analyze → decisión → storage).
+  Cada imagen es independiente (`decision.reset()` entre una y otra, sin arrastrar
+  debounce — es análisis offline, no stream). Imprime PASS/WARN/FAIL por imagen y un
+  resumen con costo estimado al final. Sale con error si la carpeta no existe o no
+  tiene imágenes.
+
 ### 2.2 Export CSV (`--export archivo.csv [--session N]`)
 - `run_export()` en `main.py`: vuelca las inspecciones de una sesión (la última si no
   se pasa `--session`) a CSV con `csv.DictWriter`. Columnas: timestamp, verdict,
@@ -15,7 +24,8 @@
   (matriz). Los tests mockean API y cámara — no requieren secrets. Badge en el README.
 
 ### Verificación
-- 43/43 tests pasan (2 nuevos: export escribe CSV con defectos, y sale sin sesiones).
+- 45/45 tests pasan (4 nuevos: batch en una sesión + carpeta vacía; export escribe
+  CSV con defectos + sale sin sesiones).
 
 ## v2 — Fase 1: precisión medible
 

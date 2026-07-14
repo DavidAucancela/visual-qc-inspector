@@ -4,6 +4,7 @@ Uso:
   python main.py                        # perfil de config/settings.yaml
   python main.py --profile pcb          # perfil específico
   python main.py --image path/img.jpg   # analizar una sola imagen (sin cámara)
+  python main.py --dir carpeta/         # analizar un lote de imágenes (una sesión)
   python main.py --report               # solo generar reporte de la última sesión
   python main.py --export out.csv       # exportar inspecciones a CSV (--session N opcional)
 
@@ -117,6 +118,58 @@ def run_single_image(image_path: str, settings: dict, profile: dict, api_key: st
 
     path = reporter.generate(session_id, storage)
     print(f"\nReporte: {path}")
+    storage.close()
+
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def run_batch(dir_path: str, settings: dict, profile: dict, api_key: str) -> None:
+    """Analiza todas las imágenes de una carpeta en una sola sesión y reporte.
+
+    Reutiliza el pipeline de --image (preprocess → analyze → decisión → storage)
+    pero comparte una sesión para todo el lote. Cada imagen se evalúa de forma
+    independiente (debounce ya no aplica: es análisis offline, no stream).
+    Útil para re-procesar evidencia o validar un lote de producción sin cámara.
+    """
+    directory = Path(dir_path)
+    if not directory.is_dir():
+        sys.exit(f"No es una carpeta: {dir_path}")
+    images = sorted(
+        p for p in directory.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    )
+    if not images:
+        sys.exit(f"La carpeta no tiene imágenes: {dir_path}")
+
+    preprocessor, _, analyzer, decision, storage, _, reporter = build_components(
+        settings, profile, api_key
+    )
+    session_id = storage.start_session(profile["name"])
+    print(f"Lote: {len(images)} imágenes — perfil '{profile['name']}' "
+          f"(sesión {session_id})")
+
+    counts = {"PASS": 0, "WARN": 0, "FAIL": 0}
+    for i, img_path in enumerate(images, 1):
+        frame = cv2.imread(str(img_path))
+        if frame is None:
+            print(f"  [{i}/{len(images)}] {img_path.name}: no se pudo leer, se omite")
+            continue
+        decision.reset()  # cada imagen es independiente, sin arrastrar debounce
+        processed = preprocessor.process(frame)
+        result = analyzer.analyze(preprocessor.to_base64(processed))
+        verdict = decision.evaluate(result)
+        storage.save_inspection(session_id, verdict, result, processed)
+        counts[verdict.status] = counts.get(verdict.status, 0) + 1
+        print(f"  [{i}/{len(images)}] {img_path.name}: {verdict.status} "
+              f"(confianza {result.overall_confidence:.0%})")
+
+    storage.end_session(session_id)
+    path = reporter.generate(session_id, storage)
+    print(f"\nLote completo: {counts['PASS']} PASS · {counts['WARN']} WARN · "
+          f"{counts['FAIL']} FAIL")
+    print(f"Costo estimado: ${analyzer.estimated_cost_usd:.4f} USD")
+    print(f"Reporte: {path}")
     storage.close()
 
 
@@ -311,6 +364,7 @@ def main() -> None:
     parser.add_argument("--no-camera", action="store_true",
                         help="no usar cámara (requiere --image)")
     parser.add_argument("--image", help="analizar una sola imagen y salir")
+    parser.add_argument("--dir", help="analizar todas las imágenes de una carpeta y salir")
     parser.add_argument("--report", action="store_true",
                         help="solo generar reporte de la última sesión")
     parser.add_argument("--list-cameras", action="store_true",
@@ -347,6 +401,9 @@ def main() -> None:
 
     if args.image:
         run_single_image(args.image, settings, load_profile(profile_name), api_key)
+        return
+    if args.dir:
+        run_batch(args.dir, settings, load_profile(profile_name), api_key)
         return
     if args.no_camera:
         sys.exit("--no-camera requiere --image ruta/imagen.jpg")

@@ -30,6 +30,7 @@ cp .env.example .env   # agregar tu ANTHROPIC_API_KEY
 ```bash
 python main.py --profile generic     # inspección en vivo con webcam
 python main.py --image foto.jpg      # analizar una sola imagen (sin cámara)
+python main.py --dir carpeta/        # analizar un lote de imágenes (una sesión, un reporte)
 python main.py --report              # regenerar reporte de la última sesión
 python main.py --export out.csv      # exportar inspecciones a CSV (--session N opcional)
 python main.py --list-cameras        # listar cámaras disponibles y sus índices
