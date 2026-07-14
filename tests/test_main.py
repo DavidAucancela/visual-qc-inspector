@@ -99,3 +99,32 @@ def test_run_single_image_missing_file_exits(isolated_main, tmp_path):
         main.run_single_image(
             str(tmp_path / "no_existe.jpg"), settings, profile, api_key="test-key"
         )
+
+
+def test_run_export_writes_csv(isolated_main, tmp_path):
+    """--export vuelca las inspecciones de la última sesión a CSV con sus defectos."""
+    import csv as _csv
+
+    tmp, _ = isolated_main
+    image_path = _write_image(tmp_path / "muestra.jpg")
+    settings = main.load_settings()
+    profile = main.load_profile("generic")
+    main.run_single_image(image_path, settings, profile, api_key="test-key")
+
+    csv_path = tmp_path / "export.csv"
+    main.run_export(str(csv_path))
+
+    assert csv_path.exists()
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        rows = list(_csv.DictReader(f))
+    assert len(rows) == 1
+    assert rows[0]["verdict"] == "FAIL"
+    # El defecto crítico quedó serializado en la celda de defectos
+    assert "critical" in rows[0]["defects"]
+    assert "Grieta" in rows[0]["defects"]
+
+
+def test_run_export_no_sessions_exits(isolated_main, tmp_path):
+    """Sin sesiones registradas, --export sale con error en vez de crear un CSV vacío."""
+    with pytest.raises(SystemExit):
+        main.run_export(str(tmp_path / "vacio.csv"))

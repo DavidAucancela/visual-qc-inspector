@@ -5,6 +5,7 @@ Uso:
   python main.py --profile pcb          # perfil específico
   python main.py --image path/img.jpg   # analizar una sola imagen (sin cámara)
   python main.py --report               # solo generar reporte de la última sesión
+  python main.py --export out.csv       # exportar inspecciones a CSV (--session N opcional)
 
 Teclas en vivo:
   SPACE → disparar análisis manual    R → generar reporte de sesión actual
@@ -15,6 +16,7 @@ Teclas en vivo:
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import sys
 import time
@@ -27,7 +29,7 @@ from dotenv import load_dotenv
 
 from src.alerter import Alerter
 from src.analyzer import MODEL, VisionAnalyzer
-from src.capture import CameraCapture
+from src.capture import CameraCapture, list_cameras
 from src.dashboard import Dashboard
 from src.decision import DecisionEngine
 from src.frame_selector import FrameSelector
@@ -118,6 +120,23 @@ def run_single_image(image_path: str, settings: dict, profile: dict, api_key: st
     storage.close()
 
 
+def run_list_cameras() -> None:
+    """Modo --list-cameras: sondea y muestra las cámaras disponibles y sus índices."""
+    print("Sondeando cámaras disponibles...\n")
+    cams = list_cameras()
+    if not cams:
+        print("No se detectó ninguna cámara.")
+        return
+    for c in cams:
+        frame_note = "entrega frame" if c["delivers_frame"] else "abre pero NO entrega frame"
+        print(f"  index {c['index']}: {c['width']}x{c['height']} — {frame_note}")
+    print(
+        "\nElegí el índice de tu webcam y ponelo en config/settings.yaml "
+        "(camera.device_id),\no usalo directo con:  python main.py --device N\n"
+        "En macOS, la cámara del iPhone (Continuity Camera) suele ser el index 0."
+    )
+
+
 def run_report_only() -> None:
     """Modo --report: regenera el reporte HTML de la última sesión guardada."""
     storage = Storage(str(DB_PATH), str(SESSIONS_DIR))
@@ -128,6 +147,49 @@ def run_report_only() -> None:
     path = reporter.generate(session_id, storage)
     print(f"Reporte de la sesión {session_id}: {path}")
     storage.close()
+
+
+def run_export(csv_path: str, session_id: int | None = None) -> None:
+    """Modo --export: vuelca las inspecciones de una sesión a CSV para análisis externo.
+
+    Sin --session usa la última sesión registrada. Cada defecto se serializa como
+    "[severidad] descripción (confianza%)" separados por "; " en una sola celda.
+    """
+    storage = Storage(str(DB_PATH), str(SESSIONS_DIR))
+    try:
+        if session_id is None:
+            session_id = storage.get_last_session_id()
+        if session_id is None:
+            sys.exit("No hay sesiones registradas todavía.")
+        inspections = storage.get_inspections(session_id)
+        if not inspections:
+            sys.exit(f"La sesión {session_id} no tiene inspecciones.")
+
+        fields = ["timestamp", "verdict", "confidence", "summary",
+                  "defects", "latency_ms", "model", "frame_path"]
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            for insp in inspections:
+                defects = "; ".join(
+                    f"[{d.get('severity', '')}] {d.get('description', '')}"
+                    f" ({d.get('confidence', 0):.0%})"
+                    for d in insp.get("defects", [])
+                )
+                writer.writerow({
+                    "timestamp": insp.get("timestamp", ""),
+                    "verdict": insp.get("verdict", ""),
+                    "confidence": insp.get("overall_confidence", ""),
+                    "summary": insp.get("summary", ""),
+                    "defects": defects,
+                    "latency_ms": insp.get("latency_ms", ""),
+                    "model": insp.get("model", "") or "",
+                    "frame_path": insp.get("frame_path", "") or "",
+                })
+        print(f"Exportadas {len(inspections)} inspecciones de la sesión "
+              f"{session_id} a {csv_path}")
+    finally:
+        storage.close()
 
 
 def run_live(settings: dict, profile_name: str, api_key: str) -> None:
@@ -251,10 +313,26 @@ def main() -> None:
     parser.add_argument("--image", help="analizar una sola imagen y salir")
     parser.add_argument("--report", action="store_true",
                         help="solo generar reporte de la última sesión")
+    parser.add_argument("--list-cameras", action="store_true",
+                        help="listar cámaras disponibles y sus índices, y salir")
+    parser.add_argument("--device", type=int,
+                        help="índice de cámara a usar (override de camera.device_id)")
+    parser.add_argument("--export", metavar="ARCHIVO.csv",
+                        help="exportar inspecciones a CSV (usa --session o la última)")
+    parser.add_argument("--session", type=int,
+                        help="id de sesión para --export (default: la última)")
     args = parser.parse_args()
+
+    if args.list_cameras:
+        run_list_cameras()
+        return
 
     if args.report:
         run_report_only()
+        return
+
+    if args.export:
+        run_export(args.export, args.session)
         return
 
     load_dotenv()
@@ -264,6 +342,8 @@ def main() -> None:
 
     settings = load_settings()
     profile_name = args.profile or settings.get("active_profile", "generic")
+    if args.device is not None:
+        settings.setdefault("camera", {})["device_id"] = args.device
 
     if args.image:
         run_single_image(args.image, settings, load_profile(profile_name), api_key)
