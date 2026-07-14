@@ -1,6 +1,40 @@
 # Changelog
 
-## v2 (en progreso) — Fase 2: robustez operativa
+## v2 (en progreso) — Fases 3 y 4: integración y pulido
+
+### 3.2 Webhook enriquecido
+- `_send_webhook` ahora incluye el nombre del perfil activo y cada defecto con su
+  severidad, descripción, ubicación y confianza (una línea por defecto), además del
+  resumen y la confianza global. Sigue siendo payload compatible Slack/Discord
+  (`text`/`content`). El worker pasa `self.analyzer.profile["name"]` a `alert_fail`.
+
+### 4.1 Empaquetado (`pyproject.toml`)
+- `pyproject.toml` con metadata, dependencias y entry point de consola
+  `visual-qc = main:main` (equivalente a `python main.py`). Extras opcionales:
+  `[observability]` (llm-observatory) y `[dev]` (pytest). `pip install -e .` expone
+  el comando. `requirements.txt` se mantiene (lo usa el CI).
+
+### 4.2 Dashboard: estado del debounce
+- El panel de estado muestra la racha actual (`consecutive_count/debounce_frames`) y
+  el umbral `FAIL >= <fail_on_severity>` del perfil activo, para que el operador
+  entienda por qué un WARN/FAIL todavía no confirma. `run_live` pasa
+  `decision.debounce_frames` y `decision.fail_on_severity` a `Dashboard.render`.
+
+### 4.3 Guía de calibración de perfiles
+- `docs/calibracion-perfiles.md`: cómo escribir una rúbrica de severidad efectiva,
+  validar un perfil con el golden set (`eval/`), y qué ajustar ante falsos positivos
+  vs. falsos negativos (tabla síntoma→métrica→ajuste). Enlazada desde el README.
+
+### Pendientes de estas fases
+- **3.1** (verificar observabilidad en vivo) y **3.4** (API REST opcional) quedan
+  abiertos: 3.1 requiere un `OBSERVATORY_URL` real corriendo; 3.4 solo se hace si
+  aparece la necesidad de consultar resultados desde otra máquina.
+
+### Verificación
+- 53/53 tests pasan (2 nuevos en `test_alerter.py`: webhook con perfil+defectos y sin
+  defectos). Entry point `visual-qc` probado con `pip install -e .`.
+
+## v2 — Fase 2: robustez operativa
 
 ### 2.4 Reconexión de cámara
 - `CameraCapture.try_reopen()`: reintenta abrir el dispositivo sin lanzar (libera el

@@ -349,6 +349,8 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
                     analysis_count=analyzer.total_analyses,
                     est_cost_usd=analyzer.estimated_cost_usd,
                     show_defects=show_defects,
+                    debounce_frames=decision.debounce_frames,
+                    fail_on_severity=decision.fail_on_severity,
                 )
                 cv2.imshow("QC Inspector", display)
 
