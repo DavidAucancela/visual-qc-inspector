@@ -58,6 +58,7 @@ python main.py                       # inspección en vivo (active_profile de co
 python main.py --profile pcb         # perfil específico
 python main.py --image foto.jpg      # analizar una imagen estática (sin cámara)
 python main.py --report              # regenerar reporte de la última sesión
+python main.py --export out.csv      # exportar inspecciones a CSV (--session N; default última)
 python main.py --list-cameras        # listar cámaras y sus índices (elegir device_id)
 python main.py --device 1            # override del índice de cámara (camera.device_id)
 

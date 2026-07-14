@@ -1,5 +1,7 @@
 # Visual QC Inspector
 
+[![CI](https://github.com/DavidAucancela/visual-qc-inspector/actions/workflows/ci.yml/badge.svg)](https://github.com/DavidAucancela/visual-qc-inspector/actions/workflows/ci.yml)
+
 Sistema de inspección visual de calidad en tiempo real usando webcam + Claude Vision.
 La cámara captura frames, Claude analiza la imagen contra criterios escritos en lenguaje
 natural, y el sistema emite veredictos **PASS / WARN / FAIL** con evidencia auditable
@@ -29,6 +31,7 @@ cp .env.example .env   # agregar tu ANTHROPIC_API_KEY
 python main.py --profile generic     # inspección en vivo con webcam
 python main.py --image foto.jpg      # analizar una sola imagen (sin cámara)
 python main.py --report              # regenerar reporte de la última sesión
+python main.py --export out.csv      # exportar inspecciones a CSV (--session N opcional)
 python main.py --list-cameras        # listar cámaras disponibles y sus índices
 python main.py --device 1            # forzar un índice de cámara puntual
 ```

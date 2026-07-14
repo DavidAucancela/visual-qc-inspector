@@ -5,6 +5,7 @@ Uso:
   python main.py --profile pcb          # perfil específico
   python main.py --image path/img.jpg   # analizar una sola imagen (sin cámara)
   python main.py --report               # solo generar reporte de la última sesión
+  python main.py --export out.csv       # exportar inspecciones a CSV (--session N opcional)
 
 Teclas en vivo:
   SPACE → disparar análisis manual    R → generar reporte de sesión actual
@@ -15,6 +16,7 @@ Teclas en vivo:
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import sys
 import time
@@ -147,6 +149,49 @@ def run_report_only() -> None:
     storage.close()
 
 
+def run_export(csv_path: str, session_id: int | None = None) -> None:
+    """Modo --export: vuelca las inspecciones de una sesión a CSV para análisis externo.
+
+    Sin --session usa la última sesión registrada. Cada defecto se serializa como
+    "[severidad] descripción (confianza%)" separados por "; " en una sola celda.
+    """
+    storage = Storage(str(DB_PATH), str(SESSIONS_DIR))
+    try:
+        if session_id is None:
+            session_id = storage.get_last_session_id()
+        if session_id is None:
+            sys.exit("No hay sesiones registradas todavía.")
+        inspections = storage.get_inspections(session_id)
+        if not inspections:
+            sys.exit(f"La sesión {session_id} no tiene inspecciones.")
+
+        fields = ["timestamp", "verdict", "confidence", "summary",
+                  "defects", "latency_ms", "model", "frame_path"]
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            for insp in inspections:
+                defects = "; ".join(
+                    f"[{d.get('severity', '')}] {d.get('description', '')}"
+                    f" ({d.get('confidence', 0):.0%})"
+                    for d in insp.get("defects", [])
+                )
+                writer.writerow({
+                    "timestamp": insp.get("timestamp", ""),
+                    "verdict": insp.get("verdict", ""),
+                    "confidence": insp.get("overall_confidence", ""),
+                    "summary": insp.get("summary", ""),
+                    "defects": defects,
+                    "latency_ms": insp.get("latency_ms", ""),
+                    "model": insp.get("model", "") or "",
+                    "frame_path": insp.get("frame_path", "") or "",
+                })
+        print(f"Exportadas {len(inspections)} inspecciones de la sesión "
+              f"{session_id} a {csv_path}")
+    finally:
+        storage.close()
+
+
 def run_live(settings: dict, profile_name: str, api_key: str) -> None:
     """Loop principal en vivo: captura de cámara, dashboard OpenCV y manejo de teclas."""
     profile = load_profile(profile_name)
@@ -272,6 +317,10 @@ def main() -> None:
                         help="listar cámaras disponibles y sus índices, y salir")
     parser.add_argument("--device", type=int,
                         help="índice de cámara a usar (override de camera.device_id)")
+    parser.add_argument("--export", metavar="ARCHIVO.csv",
+                        help="exportar inspecciones a CSV (usa --session o la última)")
+    parser.add_argument("--session", type=int,
+                        help="id de sesión para --export (default: la última)")
     args = parser.parse_args()
 
     if args.list_cameras:
@@ -280,6 +329,10 @@ def main() -> None:
 
     if args.report:
         run_report_only()
+        return
+
+    if args.export:
+        run_export(args.export, args.session)
         return
 
     load_dotenv()

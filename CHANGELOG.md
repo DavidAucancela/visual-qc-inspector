@@ -1,6 +1,23 @@
 # Changelog
 
-## v2 (en progreso) — Fase 1: precisión medible
+## v2 (en progreso) — Fase 2: robustez operativa
+
+### 2.2 Export CSV (`--export archivo.csv [--session N]`)
+- `run_export()` en `main.py`: vuelca las inspecciones de una sesión (la última si no
+  se pasa `--session`) a CSV con `csv.DictWriter`. Columnas: timestamp, verdict,
+  confidence, summary, defects, latency_ms, model, frame_path. Los defectos se
+  serializan como `[severidad] descripción (confianza%)` separados por `; `.
+- Sin tocar el schema SQLite (solo lectura vía `get_inspections`). Sale con error si
+  no hay sesiones o la sesión no tiene inspecciones (no crea CSV vacío).
+
+### 3.3 CI con GitHub Actions
+- `.github/workflows/ci.yml`: corre `pytest` en push/PR sobre Python 3.10 y 3.12
+  (matriz). Los tests mockean API y cámara — no requieren secrets. Badge en el README.
+
+### Verificación
+- 43/43 tests pasan (2 nuevos: export escribe CSV con defectos, y sale sin sesiones).
+
+## v2 — Fase 1: precisión medible
 
 Ver `ROADMAP.md` para el plan completo. Fase 1 entregada:
 
