@@ -71,7 +71,9 @@ class CameraCapture:
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
             ok, _ = self._cap.read()
             return ok
-        except cv2.error:
+        except (cv2.error, OSError, RuntimeError):
+            # Un dispositivo desaparecido/bloqueado puede lanzar más que cv2.error
+            # (OSError del backend, etc.); cualquier fallo = "sigue desconectada".
             return False
 
     def warmup(self, frames: int = 10) -> None:

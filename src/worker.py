@@ -96,7 +96,7 @@ class AnalysisWorker(threading.Thread):
                 )
                 if verdict.status == "FAIL" and verdict.is_confirmed:
                     self.alerter.alert_fail(
-                        result, self.analyzer.profile.get("name", "")
+                        result, (self.analyzer.profile or {}).get("name", "")
                     )
                 elif verdict.status == "PASS":
                     self.alerter.alert_pass()

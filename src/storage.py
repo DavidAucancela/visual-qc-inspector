@@ -58,7 +58,12 @@ class Storage:
             "WARN": cfg.get("save_warn_frames", True),
             "FAIL": cfg.get("save_fail_frames", True),
         }
-        self._retention_days = int(cfg.get("retention_days", 0) or 0)
+        # Coerción segura: un typo en settings (ej. "siete") no debe tumbar el arranque
+        try:
+            self._retention_days = int(cfg.get("retention_days", 0) or 0)
+        except (TypeError, ValueError):
+            print("Aviso: storage.retention_days no es un entero; se ignora (0).")
+            self._retention_days = 0
 
         # El AnalysisWorker escribe desde otro thread: conexión compartida + lock
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
