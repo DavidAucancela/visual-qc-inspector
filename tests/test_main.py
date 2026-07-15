@@ -99,3 +99,71 @@ def test_run_single_image_missing_file_exits(isolated_main, tmp_path):
         main.run_single_image(
             str(tmp_path / "no_existe.jpg"), settings, profile, api_key="test-key"
         )
+
+
+def test_run_batch_one_session_all_images(isolated_main, tmp_path):
+    """--dir analiza todas las imágenes en una sola sesión y genera un solo reporte."""
+    tmp, reports_dir = isolated_main
+    batch_dir = tmp_path / "lote"
+    batch_dir.mkdir()
+    for name in ("a.jpg", "b.png", "c.jpg"):
+        _write_image(batch_dir / name)
+    # Un archivo no-imagen debe ignorarse
+    (batch_dir / "notas.txt").write_text("no soy imagen")
+
+    settings = main.load_settings()
+    profile = main.load_profile("generic")
+    main.run_batch(str(batch_dir), settings, profile, api_key="test-key")
+
+    # Un solo reporte para todo el lote
+    assert len(list(reports_dir.glob("*.html"))) == 1
+
+    from src.storage import Storage
+    storage = Storage(str(main.DB_PATH), str(main.SESSIONS_DIR))
+    try:
+        sid = storage.get_last_session_id()
+        stats = storage.get_session_stats(sid)
+        # Las 3 imágenes en una sola sesión (el .txt se ignoró)
+        assert stats["total_inspections"] == 3
+        assert stats["fail_count"] == 3  # el mock siempre devuelve FAIL
+    finally:
+        storage.close()
+
+
+def test_run_batch_empty_dir_exits(isolated_main, tmp_path):
+    """--dir sobre una carpeta sin imágenes sale con error."""
+    empty = tmp_path / "vacia"
+    empty.mkdir()
+    settings = main.load_settings()
+    profile = main.load_profile("generic")
+    with pytest.raises(SystemExit):
+        main.run_batch(str(empty), settings, profile, api_key="test-key")
+
+
+def test_run_export_writes_csv(isolated_main, tmp_path):
+    """--export vuelca las inspecciones de la última sesión a CSV con sus defectos."""
+    import csv as _csv
+
+    tmp, _ = isolated_main
+    image_path = _write_image(tmp_path / "muestra.jpg")
+    settings = main.load_settings()
+    profile = main.load_profile("generic")
+    main.run_single_image(image_path, settings, profile, api_key="test-key")
+
+    csv_path = tmp_path / "export.csv"
+    main.run_export(str(csv_path))
+
+    assert csv_path.exists()
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        rows = list(_csv.DictReader(f))
+    assert len(rows) == 1
+    assert rows[0]["verdict"] == "FAIL"
+    # El defecto crítico quedó serializado en la celda de defectos
+    assert "critical" in rows[0]["defects"]
+    assert "Grieta" in rows[0]["defects"]
+
+
+def test_run_export_no_sessions_exits(isolated_main, tmp_path):
+    """Sin sesiones registradas, --export sale con error en vez de crear un CSV vacío."""
+    with pytest.raises(SystemExit):
+        main.run_export(str(tmp_path / "vacio.csv"))

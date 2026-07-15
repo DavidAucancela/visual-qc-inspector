@@ -9,3 +9,6 @@ reports/
 *.db
 .DS_Store
 /test_sample.jpg
+*.egg-info/
+build/
+dist/

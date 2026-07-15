@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime, timedelta
 
 import numpy as np
 import pytest
@@ -156,3 +157,62 @@ def test_connection_shared_across_threads(storage):
 
     assert not errors, f"escritura cross-thread falló: {errors}"
     assert storage.get_session_stats(sid)["total_inspections"] == 40
+
+
+def test_retention_deletes_old_sessions_and_frames(tmp_path):
+    """retention_days borra sesiones (filas + carpeta de frames) más viejas que N días."""
+    db = str(tmp_path / "qc.db")
+    sessions_dir = str(tmp_path / "sessions")
+
+    # Sin retención: creo una sesión y la envejezco artificialmente
+    st = Storage(db, sessions_dir)
+    old_sid = st.start_session("generic")
+    st.save_inspection(old_sid, _verdict("FAIL"), _result("FAIL"), _frame())
+    recent_sid = st.start_session("generic")
+    old_ts = (datetime.now() - timedelta(days=40)).isoformat()
+    with st._lock:
+        st._conn.execute(
+            "UPDATE sessions SET started_at = ? WHERE id = ?", (old_ts, old_sid)
+        )
+        st._conn.commit()
+    st.close()
+
+    old_dir = tmp_path / "sessions" / str(old_sid)
+    assert old_dir.is_dir()
+
+    # Reabrir con retención de 30 días → la vieja se borra, la reciente queda
+    st2 = Storage(db, sessions_dir, {"retention_days": 30})
+    try:
+        assert not old_dir.exists()
+        assert (tmp_path / "sessions" / str(recent_sid)).is_dir()
+        with st2._lock:
+            ids = {r["id"] for r in st2._conn.execute("SELECT id FROM sessions")}
+            insp = st2._conn.execute(
+                "SELECT COUNT(*) AS n FROM inspections WHERE session_id = ?",
+                (old_sid,),
+            ).fetchone()["n"]
+        assert old_sid not in ids and recent_sid in ids
+        assert insp == 0  # las inspecciones de la sesión vieja también se borraron
+    finally:
+        st2.close()
+
+
+def test_retention_zero_keeps_everything(tmp_path):
+    """retention_days=0 (default) no borra nada aunque la sesión sea vieja."""
+    db = str(tmp_path / "qc.db")
+    sessions_dir = str(tmp_path / "sessions")
+    st = Storage(db, sessions_dir)
+    sid = st.start_session("generic")
+    old_ts = (datetime.now() - timedelta(days=999)).isoformat()
+    with st._lock:
+        st._conn.execute(
+            "UPDATE sessions SET started_at = ? WHERE id = ?", (old_ts, sid)
+        )
+        st._conn.commit()
+    st.close()
+
+    st2 = Storage(db, sessions_dir, {"retention_days": 0})
+    try:
+        assert st2.get_last_session_id() == sid
+    finally:
+        st2.close()

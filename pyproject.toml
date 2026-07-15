@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visual-qc-inspector"
+version = "2.0.0"
+description = "Inspección visual de calidad en tiempo real con Claude Vision (PASS/WARN/FAIL con evidencia auditable)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "David Aucancela" }]
+dependencies = [
+    "anthropic>=0.69",
+    "pydantic>=2",
+    "opencv-python-headless>=4.9",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "requests>=2.31",
+    "numpy>=1.26",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Observabilidad (métricas a llm-observatory). Sin esto el reporte de métricas es no-op.
+observability = [
+    "llm-observatory @ git+https://github.com/DavidAucancela/llm-observatory.git#subdirectory=packages/sdk-python",
+]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+visual-qc = "main:main"
+
+[tool.setuptools]
+# Layout plano: main.py en la raíz + paquete src/. Sin auto-discovery para no
+# confundir a setuptools con las carpetas de datos (data/, reports/, eval/).
+py-modules = ["main"]
+packages = ["src"]

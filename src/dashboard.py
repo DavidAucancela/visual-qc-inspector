@@ -51,12 +51,15 @@ class Dashboard:
         analysis_count: int = 0,
         est_cost_usd: float = 0.0,
         show_defects: bool = True,
+        debounce_frames: int = 0,
+        fail_on_severity: str = "",
     ) -> np.ndarray:
         """Compone el overlay completo (estado, defectos, barra inferior, spinner) sobre una copia del frame."""
         self._frame_count += 1
         display = frame.copy()
 
-        self._draw_status_panel(display, verdict, result, fps, analysis_count, est_cost_usd)
+        self._draw_status_panel(display, verdict, result, fps, analysis_count,
+                                est_cost_usd, debounce_frames, fail_on_severity)
         if show_defects and result is not None and result.defects:
             self._draw_defects_panel(display, result)
         self._draw_bottom_bar(display, profile_name)
@@ -64,10 +67,11 @@ class Dashboard:
             self._draw_spinner(display)
         return display
 
-    def _draw_status_panel(self, img, verdict, result, fps, analysis_count, est_cost_usd):
+    def _draw_status_panel(self, img, verdict, result, fps, analysis_count,
+                           est_cost_usd, debounce_frames=0, fail_on_severity=""):
         """Dibuja el panel superior izquierdo: veredicto actual, resumen y métricas (FPS/latencia/costo)."""
         h, w = img.shape[:2]
-        panel_w, panel_h = 360, 130
+        panel_w, panel_h = 360, 152
         self._overlay_rect(img, (10, 10), (10 + panel_w, 10 + panel_h))
 
         if verdict is None:
@@ -87,6 +91,18 @@ class Dashboard:
         info = f"FPS {fps:.0f} | {latency} ms | {analysis_count} analisis | ~${est_cost_usd:.4f}"
         cv2.putText(img, info, (25, 122),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, GRAY, 1, cv2.LINE_AA)
+
+        # Estado del debounce: racha actual y umbral de severidad del perfil,
+        # para que el operador entienda por qué un WARN/FAIL todavia no confirma.
+        if debounce_frames or fail_on_severity:
+            parts = []
+            if verdict is not None and debounce_frames:
+                streak = min(verdict.consecutive_count, debounce_frames)
+                parts.append(f"racha {streak}/{debounce_frames}")
+            if fail_on_severity:
+                parts.append(f"FAIL >= {fail_on_severity}")
+            cv2.putText(img, " | ".join(parts), (25, 144),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, GRAY, 1, cv2.LINE_AA)
 
     def _draw_defects_panel(self, img, result: InspectionResult):
         """Dibuja el panel superior derecho con hasta 6 defectos detectados y su severidad."""

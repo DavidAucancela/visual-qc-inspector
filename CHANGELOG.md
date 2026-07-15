@@ -1,6 +1,83 @@
 # Changelog
 
-## v2 (en progreso) — Fase 1: precisión medible
+## v2 (en progreso) — Fases 3 y 4: integración y pulido
+
+### 3.2 Webhook enriquecido
+- `_send_webhook` ahora incluye el nombre del perfil activo y cada defecto con su
+  severidad, descripción, ubicación y confianza (una línea por defecto), además del
+  resumen y la confianza global. Sigue siendo payload compatible Slack/Discord
+  (`text`/`content`). El worker pasa `self.analyzer.profile["name"]` a `alert_fail`.
+
+### 4.1 Empaquetado (`pyproject.toml`)
+- `pyproject.toml` con metadata, dependencias y entry point de consola
+  `visual-qc = main:main` (equivalente a `python main.py`). Extras opcionales:
+  `[observability]` (llm-observatory) y `[dev]` (pytest). `pip install -e .` expone
+  el comando. `requirements.txt` se mantiene (lo usa el CI).
+
+### 4.2 Dashboard: estado del debounce
+- El panel de estado muestra la racha actual (`consecutive_count/debounce_frames`) y
+  el umbral `FAIL >= <fail_on_severity>` del perfil activo, para que el operador
+  entienda por qué un WARN/FAIL todavía no confirma. `run_live` pasa
+  `decision.debounce_frames` y `decision.fail_on_severity` a `Dashboard.render`.
+
+### 4.3 Guía de calibración de perfiles
+- `docs/calibracion-perfiles.md`: cómo escribir una rúbrica de severidad efectiva,
+  validar un perfil con el golden set (`eval/`), y qué ajustar ante falsos positivos
+  vs. falsos negativos (tabla síntoma→métrica→ajuste). Enlazada desde el README.
+
+### Pendientes de estas fases
+- **3.1** (verificar observabilidad en vivo) y **3.4** (API REST opcional) quedan
+  abiertos: 3.1 requiere un `OBSERVATORY_URL` real corriendo; 3.4 solo se hace si
+  aparece la necesidad de consultar resultados desde otra máquina.
+
+### Verificación
+- 53/53 tests pasan (2 nuevos en `test_alerter.py`: webhook con perfil+defectos y sin
+  defectos). Entry point `visual-qc` probado con `pip install -e .`.
+
+## v2 — Fase 2: robustez operativa
+
+### 2.4 Reconexión de cámara
+- `CameraCapture.try_reopen()`: reintenta abrir el dispositivo sin lanzar (libera el
+  handle previo y valida con una lectura real; abre-pero-no-captura cuenta como fallo).
+- En vivo, si `cam.read()` devuelve `None`, `run_live` ya no termina: `_reconnect_camera()`
+  muestra "CAMARA DESCONECTADA" en la ventana, reintenta con backoff (0.5→5 s) y sigue
+  capturando al reconectar. Q sale durante la desconexión.
+
+### 2.3 Retención de evidencia (`storage.retention_days`)
+- Nuevo `retention_days` en `settings.yaml` (default 0 = nunca borra). Al construir
+  `Storage` (arranque de cualquier modo), `_apply_retention()` borra las sesiones cuyo
+  `started_at` sea más viejo que N días: filas de `sessions` + `inspections` y la
+  carpeta `data/sessions/<id>/`. Borrado de disco best-effort
+  (`shutil.rmtree(ignore_errors=True)`) — un fallo de FS no aborta el arranque. Evita
+  que `data/sessions/` crezca sin límite en uso continuo.
+
+### 2.1 Modo batch (`--dir carpeta/`)
+- `run_batch()` en `main.py`: analiza todas las imágenes de una carpeta
+  (`.jpg/.jpeg/.png/.bmp/.webp`) en **una sola sesión** y genera **un solo reporte**.
+  Reutiliza el pipeline de `--image` (preprocess → analyze → decisión → storage).
+  Cada imagen es independiente (`decision.reset()` entre una y otra, sin arrastrar
+  debounce — es análisis offline, no stream). Imprime PASS/WARN/FAIL por imagen y un
+  resumen con costo estimado al final. Sale con error si la carpeta no existe o no
+  tiene imágenes.
+
+### 2.2 Export CSV (`--export archivo.csv [--session N]`)
+- `run_export()` en `main.py`: vuelca las inspecciones de una sesión (la última si no
+  se pasa `--session`) a CSV con `csv.DictWriter`. Columnas: timestamp, verdict,
+  confidence, summary, defects, latency_ms, model, frame_path. Los defectos se
+  serializan como `[severidad] descripción (confianza%)` separados por `; `.
+- Sin tocar el schema SQLite (solo lectura vía `get_inspections`). Sale con error si
+  no hay sesiones o la sesión no tiene inspecciones (no crea CSV vacío).
+
+### 3.3 CI con GitHub Actions
+- `.github/workflows/ci.yml`: corre `pytest` en push/PR sobre Python 3.10 y 3.12
+  (matriz). Los tests mockean API y cámara — no requieren secrets. Badge en el README.
+
+### Verificación
+- 51/51 tests pasan (10 nuevos: batch en una sesión + carpeta vacía; export escribe
+  CSV con defectos + sale sin sesiones; retención borra sesiones viejas + retención 0
+  conserva todo; try_reopen éxito/no-abre/abre-sin-frame/libera-handle-previo).
+
+## v2 — Fase 1: precisión medible
 
 Ver `ROADMAP.md` para el plan completo. Fase 1 entregada:
 
