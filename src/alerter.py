@@ -29,14 +29,14 @@ class Alerter:
         self.os_notification = alerts.get("os_notification", True)
         self.webhook_url = webhook_url
 
-    def alert_fail(self, result: InspectionResult) -> None:
+    def alert_fail(self, result: InspectionResult, profile_name: str = "") -> None:
         """Dispara sonido, notificación del OS y/o webhook para un FAIL confirmado."""
         if self.sound_on_fail:
             self._run_async(self._play_sound, FAIL_SOUND_MAC)
         if self.os_notification:
             self._run_async(self._notify, "DEFECTO DETECTADO", result.summary)
         if self.webhook_on_fail and self.webhook_url:
-            self._run_async(self._send_webhook, result)
+            self._run_async(self._send_webhook, result, profile_name)
 
     def alert_pass(self) -> None:
         """Reproduce sonido de PASS si `sound_on_pass` está activado en config."""
@@ -75,14 +75,27 @@ class Alerter:
         except Exception:
             pass
 
-    def _send_webhook(self, result: InspectionResult) -> None:
-        """POST JSON compatible con webhooks de Slack/Discord ("text"/"content")."""
-        defects = "; ".join(
-            f"[{d.severity}] {d.description}" for d in result.defects
-        ) or "sin detalle"
+    def _send_webhook(self, result: InspectionResult, profile_name: str = "") -> None:
+        """POST JSON compatible con webhooks de Slack/Discord ("text"/"content").
+
+        Payload enriquecido: perfil activo + cada defecto con su severidad y
+        confianza en una línea, para que la alerta sea accionable sin abrir la app.
+        """
+        if result.defects:
+            defects = "\n".join(
+                f"  - [{d.severity}] {d.description}"
+                f" — {d.location} ({d.confidence:.0%})"
+                for d in result.defects
+            )
+        else:
+            defects = "  - sin detalle"
+        header = ":rotating_light: QC FAIL"
+        if profile_name:
+            header += f" [{profile_name}]"
         text = (
-            f":rotating_light: QC FAIL — {result.summary}\n"
-            f"Confianza: {result.overall_confidence:.0%} | Defectos: {defects}"
+            f"{header} — {result.summary}\n"
+            f"Confianza global: {result.overall_confidence:.0%}\n"
+            f"Defectos ({len(result.defects)}):\n{defects}"
         )
         payload = {"text": text, "content": text}
         try:

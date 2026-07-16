@@ -4,6 +4,7 @@ Uso:
   python main.py                        # perfil de config/settings.yaml
   python main.py --profile pcb          # perfil específico
   python main.py --image path/img.jpg   # analizar una sola imagen (sin cámara)
+  python main.py --dir carpeta/         # analizar un lote de imágenes (una sesión)
   python main.py --report               # solo generar reporte de la última sesión
   python main.py --export out.csv       # exportar inspecciones a CSV (--session N opcional)
 
@@ -24,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 import yaml
 from dotenv import load_dotenv
 
@@ -120,6 +122,58 @@ def run_single_image(image_path: str, settings: dict, profile: dict, api_key: st
     storage.close()
 
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def run_batch(dir_path: str, settings: dict, profile: dict, api_key: str) -> None:
+    """Analiza todas las imágenes de una carpeta en una sola sesión y reporte.
+
+    Reutiliza el pipeline de --image (preprocess → analyze → decisión → storage)
+    pero comparte una sesión para todo el lote. Cada imagen se evalúa de forma
+    independiente (debounce ya no aplica: es análisis offline, no stream).
+    Útil para re-procesar evidencia o validar un lote de producción sin cámara.
+    """
+    directory = Path(dir_path)
+    if not directory.is_dir():
+        sys.exit(f"No es una carpeta: {dir_path}")
+    images = sorted(
+        p for p in directory.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    )
+    if not images:
+        sys.exit(f"La carpeta no tiene imágenes: {dir_path}")
+
+    preprocessor, _, analyzer, decision, storage, _, reporter = build_components(
+        settings, profile, api_key
+    )
+    session_id = storage.start_session(profile["name"])
+    print(f"Lote: {len(images)} imágenes — perfil '{profile['name']}' "
+          f"(sesión {session_id})")
+
+    counts = {"PASS": 0, "WARN": 0, "FAIL": 0}
+    for i, img_path in enumerate(images, 1):
+        frame = cv2.imread(str(img_path))
+        if frame is None:
+            print(f"  [{i}/{len(images)}] {img_path.name}: no se pudo leer, se omite")
+            continue
+        decision.reset()  # cada imagen es independiente, sin arrastrar debounce
+        processed = preprocessor.process(frame)
+        result = analyzer.analyze(preprocessor.to_base64(processed))
+        verdict = decision.evaluate(result)
+        storage.save_inspection(session_id, verdict, result, processed)
+        counts[verdict.status] = counts.get(verdict.status, 0) + 1
+        print(f"  [{i}/{len(images)}] {img_path.name}: {verdict.status} "
+              f"(confianza {result.overall_confidence:.0%})")
+
+    storage.end_session(session_id)
+    path = reporter.generate(session_id, storage)
+    print(f"\nLote completo: {counts['PASS']} PASS · {counts['WARN']} WARN · "
+          f"{counts['FAIL']} FAIL")
+    print(f"Costo estimado: ${analyzer.estimated_cost_usd:.4f} USD")
+    print(f"Reporte: {path}")
+    storage.close()
+
+
 def run_list_cameras() -> None:
     """Modo --list-cameras: sondea y muestra las cámaras disponibles y sus índices."""
     print("Sondeando cámaras disponibles...\n")
@@ -192,6 +246,37 @@ def run_export(csv_path: str, session_id: int | None = None) -> None:
         storage.close()
 
 
+def _reconnect_camera(cam: CameraCapture, width: int, height: int) -> bool:
+    """Muestra 'CAMARA DESCONECTADA' y reintenta reabrir con backoff.
+
+    Mantiene la ventana OpenCV viva (para poder salir con Q durante la caída).
+    Retorna True cuando reconecta, False si el usuario presionó Q. El backoff
+    crece 0.5→1→2→4→5 s (tope 5 s) para no martillar el dispositivo.
+    """
+    print("La cámara dejó de entregar frames. Reintentando reconexión...")
+    screen = np.zeros((height, width, 3), dtype=np.uint8)
+    delay = 0.5
+    attempt = 0
+    while True:
+        attempt += 1
+        frame = screen.copy()
+        cv2.putText(frame, "CAMARA DESCONECTADA", (40, height // 2 - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
+        cv2.putText(frame, f"Reintentando... (intento {attempt}) - Q para salir",
+                    (40, height // 2 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                    (255, 255, 255), 2)
+        cv2.imshow("QC Inspector", frame)
+        # waitKey hace de sleep y a la vez atiende el teclado
+        key = cv2.waitKey(int(delay * 1000)) & 0xFF
+        if key == ord("q"):
+            return False
+        if cam.try_reopen():
+            print(f"Cámara reconectada tras {attempt} intento(s).")
+            cam.warmup(10)
+            return True
+        delay = min(delay * 2, 5.0)
+
+
 def run_live(settings: dict, profile_name: str, api_key: str) -> None:
     """Loop principal en vivo: captura de cámara, dashboard OpenCV y manejo de teclas."""
     profile = load_profile(profile_name)
@@ -230,8 +315,9 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
             while True:
                 frame = cam.read()
                 if frame is None:
-                    print("La cámara dejó de entregar frames.")
-                    break
+                    if _reconnect_camera(cam, cam_cfg["width"], cam_cfg["height"]):
+                        continue  # reconectada: seguir capturando
+                    break  # el usuario pidió salir (Q) durante la desconexión
 
                 loop_frames += 1
                 if loop_frames % 30 == 0:  # debug: cada 1 segundo (30 fps)
@@ -263,6 +349,8 @@ def run_live(settings: dict, profile_name: str, api_key: str) -> None:
                     analysis_count=analyzer.total_analyses,
                     est_cost_usd=analyzer.estimated_cost_usd,
                     show_defects=show_defects,
+                    debounce_frames=decision.debounce_frames,
+                    fail_on_severity=decision.fail_on_severity,
                 )
                 cv2.imshow("QC Inspector", display)
 
@@ -311,6 +399,7 @@ def main() -> None:
     parser.add_argument("--no-camera", action="store_true",
                         help="no usar cámara (requiere --image)")
     parser.add_argument("--image", help="analizar una sola imagen y salir")
+    parser.add_argument("--dir", help="analizar todas las imágenes de una carpeta y salir")
     parser.add_argument("--report", action="store_true",
                         help="solo generar reporte de la última sesión")
     parser.add_argument("--list-cameras", action="store_true",
@@ -347,6 +436,9 @@ def main() -> None:
 
     if args.image:
         run_single_image(args.image, settings, load_profile(profile_name), api_key)
+        return
+    if args.dir:
+        run_batch(args.dir, settings, load_profile(profile_name), api_key)
         return
     if args.no_camera:
         sys.exit("--no-camera requiere --image ruta/imagen.jpg")

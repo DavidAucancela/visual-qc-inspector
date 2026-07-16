@@ -43,5 +43,6 @@ storage:
   save_pass_frames: false  # guardar frames OK (puede llenar disco)
   save_fail_frames: true
   save_warn_frames: true
+  retention_days: 0        # al iniciar, borra sesiones + frames más viejos que N días (0 = nunca)
 
 active_profile: generic    # nombre del archivo en config/profiles/

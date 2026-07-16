@@ -48,6 +48,7 @@ class FakeAnalyzer:
         self.result = result or _result()
         self.exc = exc
         self.calls = 0
+        self.profile = {"name": "generic"}
 
     def analyze(self, frame_b64):
         self.calls += 1
@@ -78,9 +79,11 @@ class FakeAlerter:
     def __init__(self):
         self.fail_calls = 0
         self.pass_calls = 0
+        self.last_profile = None
 
-    def alert_fail(self, result):
+    def alert_fail(self, result, profile_name=""):
         self.fail_calls += 1
+        self.last_profile = profile_name
 
     def alert_pass(self):
         self.pass_calls += 1

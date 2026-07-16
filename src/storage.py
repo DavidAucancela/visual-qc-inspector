@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import threading
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import cv2
@@ -57,6 +58,12 @@ class Storage:
             "WARN": cfg.get("save_warn_frames", True),
             "FAIL": cfg.get("save_fail_frames", True),
         }
+        # Coerción segura: un typo en settings (ej. "siete") no debe tumbar el arranque
+        try:
+            self._retention_days = int(cfg.get("retention_days", 0) or 0)
+        except (TypeError, ValueError):
+            print("Aviso: storage.retention_days no es un entero; se ignora (0).")
+            self._retention_days = 0
 
         # El AnalysisWorker escribe desde otro thread: conexión compartida + lock
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -66,6 +73,40 @@ class Storage:
             self._conn.executescript(_SCHEMA)
             self._migrate()
             self._conn.commit()
+        self._apply_retention()
+
+    def _apply_retention(self) -> None:
+        """Borra sesiones (filas + frames en disco) más viejas que retention_days.
+
+        0 = retención infinita (no borra nada). Se ejecuta al iniciar. Una sesión
+        sin `started_at` parseable se conserva por seguridad. El borrado de la
+        carpeta de frames se hace best-effort: un fallo de FS no aborta el arranque.
+        """
+        if self._retention_days <= 0:
+            return
+        cutoff = (datetime.now() - timedelta(days=self._retention_days)).isoformat()
+        with self._lock:
+            old = self._conn.execute(
+                "SELECT id FROM sessions WHERE started_at IS NOT NULL"
+                " AND started_at < ?",
+                (cutoff,),
+            ).fetchall()
+            old_ids = [row["id"] for row in old]
+            if not old_ids:
+                return
+            placeholders = ",".join("?" * len(old_ids))
+            self._conn.execute(
+                f"DELETE FROM inspections WHERE session_id IN ({placeholders})",
+                old_ids,
+            )
+            self._conn.execute(
+                f"DELETE FROM sessions WHERE id IN ({placeholders})", old_ids
+            )
+            self._conn.commit()
+        for sid in old_ids:
+            shutil.rmtree(self.sessions_dir / str(sid), ignore_errors=True)
+        print(f"Retención: {len(old_ids)} sesión(es) más vieja(s) que "
+              f"{self._retention_days} días eliminada(s).")
 
     def _migrate(self) -> None:
         """Agrega columnas nuevas a DBs creadas por versiones anteriores."""

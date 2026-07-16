@@ -25,11 +25,19 @@ pip install -r requirements.txt
 cp .env.example .env   # agregar tu ANTHROPIC_API_KEY
 ```
 
+O como paquete instalable (expone el comando `visual-qc`, equivalente a `python main.py`):
+
+```bash
+pip install -e .                    # + '.[observability]' para las métricas opcionales
+visual-qc --list-cameras
+```
+
 ## Inicio rápido
 
 ```bash
 python main.py --profile generic     # inspección en vivo con webcam
 python main.py --image foto.jpg      # analizar una sola imagen (sin cámara)
+python main.py --dir carpeta/        # analizar un lote de imágenes (una sesión, un reporte)
 python main.py --report              # regenerar reporte de la última sesión
 python main.py --export out.csv      # exportar inspecciones a CSV (--session N opcional)
 python main.py --list-cameras        # listar cámaras disponibles y sus índices
@@ -85,6 +93,10 @@ context: |
 
 Y usarlo: `python main.py --profile mi_producto` (o cambiar `active_profile`
 en `config/settings.yaml`).
+
+Para calibrar un perfil con datos (rúbricas efectivas, validación con el golden
+set, qué ajustar ante falsos positivos vs. falsos negativos), ver
+[docs/calibracion-perfiles.md](docs/calibracion-perfiles.md).
 
 ## Configuración (`config/settings.yaml`)
 

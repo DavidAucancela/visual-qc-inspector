@@ -98,6 +98,64 @@ Documento corto: cómo escribir una rúbrica de severidad efectiva, cómo usar
 el golden set (1.1) para validar un perfil nuevo, y qué tocar cuando hay
 falsos positivos vs falsos negativos.
 
+## Fase 5 — Multi-proveedor: Gemini como backend de visión (futura)
+
+**Estado: planificada, no implementada.** Objetivo: que `api.provider` en
+`settings.yaml` elija entre `claude` (default, actual) y `gemini`, sin perder
+Claude ni el escalado híbrido. Se documenta acá para una fase siguiente; hay una
+API key de Gemini disponible pero el modelo exacto queda por decidir (evaluar
+`gemini-2.5-flash` como económico vs `gemini-2.5-pro` por precisión, con el
+golden set de 1.1).
+
+Motivación: hoy el proveedor está hardcodeado en el ecosistema Claude (decisión
+de v1, ver CHANGELOG). Una abstracción de proveedor permite A/B real de precisión
+y costo Claude vs Gemini sobre el mismo golden set, y da opción de segunda fuente.
+
+### 5.1 Abstracción de proveedor
+Introducir una interfaz mínima (ej. `VisionProvider`) con un único método
+`analyze_frame(frame_b64, profile) -> InspectionResult`. `VisionAnalyzer` deja de
+hablar con el SDK `anthropic` directamente y delega en el provider activo. Lo que
+**no** cambia y debe seguir igual: `InspectionResult`, `DecisionEngine`, worker,
+storage, dashboard — el contrato de salida es el mismo.
+
+### 5.2 Provider Gemini (`google-genai`)
+Puntos concretos a resolver (todos hoy asumen Anthropic en `src/analyzer.py`):
+- **SDK/cliente:** `google-genai` en vez de `anthropic.Anthropic`. Dep opcional
+  como `llm-observatory` (import con fallback): si falta el paquete o la key, el
+  provider Gemini no está disponible pero no rompe la app.
+- **Structured outputs:** el equivalente a `messages.parse(..., output_format=VisionVerdict)`
+  es `generate_content` con `response_mime_type="application/json"` +
+  `response_schema` (el mismo modelo Pydantic `VisionVerdict` debería servir como
+  schema). Mantener el fallback a `_parse_response()` → WARN no evaluable ante
+  refusal/truncado, igual que hoy.
+- **Imagen:** Anthropic usa un bloque `{"type":"image","source":{"type":"base64",
+  "media_type":"image/jpeg","data":...}}`; Gemini usa `Part.from_bytes(data, mime_type)`
+  o inline_data. Reutilizar el JPEG que ya produce `Preprocessor` (no re-encodear).
+- **Precios/costo:** agregar filas Gemini a `MODEL_PRICES` (o un dict por proveedor)
+  para que el costo estimado del dashboard siga siendo correcto. Verificar unidades
+  (USD/1M tokens) contra el pricing vigente de Gemini.
+- **Observabilidad:** `_report_metric()` replica hoy el esquema del SDK de
+  llm-observatory con `model`/tokens/`cost_usd`/`latency_ms`/`tags`; mantenerlo,
+  agregando `provider` como tag.
+
+### 5.3 API key y config
+- Key vía env `GEMINI_API_KEY` (agregar a `.env.example`), leída en `main.py` junto
+  a `ANTHROPIC_API_KEY`. Nunca hardcodear.
+- `api.provider: claude|gemini` en `settings.yaml`; `build_components()` instancia el
+  provider correcto. `api.model` pasa a interpretarse según el provider activo.
+
+### 5.4 Escalado híbrido cross-proveedor (opcional)
+El escalado actual (`api.escalation_model`) asume el mismo proveedor. Evaluar si el
+modelo de escalado puede ser de otro proveedor (ej. primario Gemini flash → escala a
+Claude Sonnet). Requiere que `escalation_model` resuelva también su provider. Dejar
+para el final; el escalado mismo-proveedor cubre el caso común.
+
+### 5.5 Tests y evaluación
+- Los tests mockean `analyzer._client.messages.parse`; con la abstracción, mockear a
+  nivel del provider (o de su cliente Gemini) replicando el objeto de respuesta.
+- Correr el golden set (1.1) con `api.provider: gemini` y comparar accuracy/F1/costo
+  contra Claude **antes** de considerar cambiar el default. Es la decisión con datos.
+
 ---
 
 ## Orden sugerido de implementación
@@ -109,3 +167,6 @@ falsos positivos vs falsos negativos.
 5. **3.3** (CI) en cualquier momento — es independiente.
 6. **3.1, 3.2, 4.x** — según necesidad.
 7. **3.4** solo si aparece el caso de uso real.
+8. **5.x** (multi-proveedor Gemini) — fase futura; empezar por 5.1 (abstracción) +
+   5.2 (provider) + 5.3 (config), medir con el golden set (5.5) antes de tocar el
+   default, y dejar 5.4 (escalado cross-proveedor) para el final.
